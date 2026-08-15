@@ -1,341 +1,1641 @@
-# 🚀 Organisation Event Media & Digital Memories Platform
-## Comprehensive Master Architectural Blueprint & Implementation Plan
+# Antigravity Production Implementation Plan
+
+## PROJECT OBJECTIVE
+
+Transform the existing project into a **production-ready multi-organisation event media platform** capable of safely handling:
+
+* 500+ concurrent active users
+* Large photo galleries
+* Multiple simultaneous uploads
+* Multiple simultaneous downloads
+* Large video files
+* Large event galleries
+* Automatic image/video compression
+* Background media processing
+* Organisation-level data isolation
+* Real-time upload/processing status
+* High database traffic
+* CDN-based media delivery
+* Reliable failure recovery
+
+The system must be designed so that **photos and videos do NOT pass through the main application server unnecessarily**.
+
+The application server should primarily handle:
+
+* Authentication
+* Authorisation
+* API requests
+* Metadata
+* Permissions
+* Upload session creation
+* Download authorisation
+* Search
+* Admin operations
+
+Large media files should be handled by object storage and CDN.
 
 ---
 
-## 1. Executive Summary & Vision
+# IMPORTANT DEVELOPMENT RULE
 
-The **Organisation Event Media & Digital Memories Platform** is a production-grade, multi-tenant SaaS platform engineered to centralise, compress, organise, moderate, and securely distribute event photos and videos for educational institutions, corporate enterprises, community clubs, and cultural organisations.
+Do NOT rewrite the entire application at once.
 
-Rather than relying on unorganised Google Drive folders, lossy WhatsApp/Telegram groups, or scattered social media posts, organisations get a dedicated, high-performance, branded digital archive with role-based access control, automated media compression/transcoding, and AI-powered "Find My Photos" facial recognition discovery.
+Implement the project in the following phases.
 
----
+After every phase:
 
-## 2. High-Level System Architecture
+1. Run the application.
+2. Run database migrations.
+3. Run automated tests.
+4. Test authentication.
+5. Test API permissions.
+6. Test upload/download.
+7. Check logs.
+8. Check performance.
+9. Fix errors.
+10. Only then continue to the next phase.
 
-```mermaid
-graph TD
-    subgraph Clients ["Client Layer (Web & Mobile Responsive)"]
-        A1["Org Admin Portal"]
-        A2["Social Media Team Studio"]
-        A3["User / Attendee Portal"]
-        A4["Public / Branded Org Page"]
-    end
+Do not break working functionality while adding new functionality.
 
-    subgraph Gateway ["Edge & Gateway Layer"]
-        B1["Cloudflare CDN / WAF"]
-        B2["Next.js / API Gateway Layer"]
-        B3["Auth & Org-Isolation Middleware"]
-    end
+Before modifying existing code:
 
-    subgraph Services ["Core Modular Services"]
-        C1["Organisation & Multi-Tenant Service"]
-        C2["Authentication & Access Pass Service"]
-        C3["Event & Album Hierarchy Service"]
-        C4["Media Ingestion & Presigned URL Service"]
-        C5["Moderation & Community Upload Service"]
-        C6["Face Recognition & Search Service"]
-        C7["Analytics & Audit Logging Service"]
-    end
-
-    subgraph Data ["Data & Storage Layer"]
-        D1[("PostgreSQL Database (Prisma / Drizzle + pgvector)")]
-        D2[("Redis (BullMQ Queues & Cache)")]
-        D3["S3-Compatible Object Storage (Originals, Derivatives, HLS Streams)"]
-    end
-
-    subgraph Workers ["Background Worker Ecosystem (BullMQ)"]
-        E1["Image Worker (Sharp / libvips - WebP/AVIF/Thumbnails)"]
-        E2["Video Worker (FFmpeg - Transcoding/HLS/Thumbnails)"]
-        E3["Face AI Worker (FaceNet / InsightFace / ONNX Embeddings)"]
-    end
-
-    Clients --> B1 --> B2 --> B3
-    B3 --> Services
-    Services --> D1
-    Services --> D2
-    Services --> D3
-    D2 --> Workers
-    Workers --> D1
-    Workers --> D3
-    D3 --> B1
-```
+* Inspect the existing project structure.
+* Identify the current framework.
+* Identify the database.
+* Identify existing authentication.
+* Identify existing API routes.
+* Identify existing storage implementation.
+* Identify existing frontend pages.
+* Reuse working code where appropriate.
+* Do not blindly replace the existing architecture.
 
 ---
 
-## 3. Technology Stack
+# PHASE 0 — PROJECT AUDIT
 
-| Layer | Recommended Technology | Rationale |
-|---|---|---|
-| **Frontend Web App** | **Next.js (App Router, TypeScript), Tailwind CSS, Framer Motion, Lucide Icons** | Server-side rendering for public org branding, high interactivity, robust DX. |
-| **Backend & API** | **Node.js (TypeScript), Next.js Server Actions / REST API Route Handlers** | Type safety end-to-end, seamless multi-tenant middleware execution. |
-| **Database** | **PostgreSQL 16+ with `pgvector` extension** | Relational integrity for multi-tenant data + native vector similarity search for face embeddings. |
-| **ORM / Data Access** | **Prisma / Drizzle ORM** | Type-safe migrations, dynamic multi-tenant filtering, fast querying. |
-| **Caching & Job Queue** | **Redis (Upstash / Redis 7+) + BullMQ** | High-throughput asynchronous background job management for media processing. |
-| **Object Storage** | **AWS S3 / Cloudflare R2 / MinIO** | S3-compatible, cost-effective storage with presigned URL direct upload capability. |
-| **Image Processing** | **Sharp (libvips)** | Ultra-fast image resizing, WebP/AVIF compression, thumbnail generation. |
-| **Video Transcoding** | **FFmpeg (fluent-ffmpeg)** | Multi-bitrate HLS encoding (1080p, 720p, 480p), adaptive compression, poster extraction. |
-| **Face Recognition Engine**| **InsightFace / FaceNet ONNX Runtime / `pgvector`** | 512-dimension face embeddings with cosine similarity distance search (`<=>`). |
-| **CDN & Delivery** | **Cloudflare CDN + Signed URLs** | Global edge caching, low-latency streaming, hotlink prevention. |
+Before writing new code, analyse the entire repository.
 
----
+Create a technical report containing:
 
-## 4. Multi-Tenant Security & Isolation Model
+### Frontend
 
-### 4.1 Tenant Isolation Strategy
-* **Shared Database with Discriminator (`org_id`)**: Every table containing tenant data enforces an indexed `organisation_id` foreign key.
-* **Middleware Interception**: All incoming API requests validate tenant context through URL slug (`/org/:slug`), request header (`X-Org-ID`), or JWT token claims.
-* **Row-Level Authorization Guard**: Data access layer injects mandatory `where: { organisationId }` constraints on every query to eliminate cross-tenant data leakage.
+* Framework
+* Routing
+* Components
+* State management
+* API integration
+* Authentication flow
+* Existing gallery implementation
 
-### 4.2 Multi-Tier Authentication Architecture
-1. **Platform Super Admin**: Full visibility over all tenants, storage quotas, platform subscriptions, and global moderation.
-2. **Organisation Administrator**: Controls organisation configuration, event hierarchies, team credentials, access codes, and moderation.
-3. **Social Media Team Accounts**: Individual authenticated accounts with event creation, bulk uploading, album publishing, and tagging privileges. All mutations produce immutable audit log entries.
-4. **Organisation Access Password & User Session**:
-   - Organisation Access Password is hashed using **Argon2id/Bcrypt**.
-   - Normal users/students unlock the organisation portal by validating the Access Password.
-   - Successful unlock issues an encrypted scoped session ticket (`OrgAccessJWT`), allowing access to approved events.
-5. **Attendee / Student Accounts**: Optional authenticated account linked to student profile for bookmarking, submitting user-uploaded photos, and registering biometric face profiles for "Find My Photos".
+### Backend
 
----
+* Framework
+* API architecture
+* Authentication
+* Authorisation
+* Middleware
+* Error handling
+* File upload handling
+* Background jobs
 
-## 5. Core Data Model & Database Architecture
+### Database
 
-```mermaid
-erDiagram
-    ORGANISATION ||--o{ ORG_ACCESS_CREDENTIAL : has
-    ORGANISATION ||--o{ USER_MEMBERSHIP : employs
-    ORGANISATION ||--o{ EVENT : hosts
-    ORGANISATION ||--o{ AUDIT_LOG : tracks
-    ORGANISATION ||--o{ SUBSCRIPTION : holds
+* Database engine
+* Tables
+* Relations
+* Indexes
+* Existing migrations
+* Potential performance problems
 
-    USER ||--o{ USER_MEMBERSHIP : belongs_to
-    USER ||--o{ FACE_PROFILE : registers
-    USER ||--o{ USER_UPLOAD : submits
+### Storage
 
-    EVENT ||--o{ ALBUM : contains
-    EVENT ||--o{ MEDIA_ITEM : contains
+Determine:
 
-    ALBUM ||--o{ MEDIA_ITEM : categorizes
-    
-    MEDIA_ITEM ||--o{ MEDIA_VARIANT : generates
-    MEDIA_ITEM ||--o{ FACE_EMBEDDING : detects
-    MEDIA_ITEM ||--o{ MODERATION_ITEM : moderates
+* Where images are stored
+* Where videos are stored
+* Whether files pass through the backend
+* Whether CDN exists
+* Whether thumbnails exist
 
-    ORGANISATION {
-        uuid id PK
-        string name
-        string slug UK
-        string org_type
-        string official_email
-        string logo_url
-        string cover_url
-        jsonb branding_colors
-        string storage_plan
-        bigint storage_used_bytes
-        boolean is_active
-        timestamp created_at
-    }
+### Security
 
-    ORG_ACCESS_CREDENTIAL {
-        uuid id PK
-        uuid organisation_id FK
-        string password_hash
-        timestamp expires_at
-        boolean is_enabled
-        timestamp last_rotated_at
-    }
+Identify:
 
-    EVENT {
-        uuid id PK
-        uuid organisation_id FK
-        string title
-        string slug
-        string description
-        integer event_year
-        date event_date
-        string cover_image_url
-        string visibility
-        boolean allow_user_uploads
-        boolean allow_face_discovery
-        timestamp created_at
-    }
+* Authentication vulnerabilities
+* Authorisation vulnerabilities
+* File upload vulnerabilities
+* Exposed secrets
+* Missing rate limiting
+* Missing validation
 
-    ALBUM {
-        uuid id PK
-        uuid event_id FK
-        string name
-        string description
-        string cover_image_url
-        integer sort_order
-    }
+### Performance
 
-    MEDIA_ITEM {
-        uuid id PK
-        uuid organisation_id FK
-        uuid event_id FK
-        uuid album_id FK
-        uuid uploaded_by_user_id FK
-        string media_type
-        string original_file_name
-        string storage_path_original
-        bigint file_size_bytes
-        integer width
-        integer height
-        float duration_seconds
-        string processing_status
-        string visibility
-        boolean is_face_processed
-        string approval_status
-        jsonb metadata
-        timestamp created_at
-    }
+Identify:
 
-    MEDIA_VARIANT {
-        uuid id PK
-        uuid media_item_id FK
-        string variant_type
-        string storage_path
-        string mime_type
-        integer width
-        integer height
-        bigint file_size_bytes
-        string cdn_url
-    }
+* N+1 queries
+* Large API responses
+* Missing indexes
+* Uncached queries
+* Direct media serving from backend
+* Blocking image/video processing
 
-    FACE_EMBEDDING {
-        uuid id PK
-        uuid media_item_id FK
-        uuid organisation_id FK
-        vector embedding_512
-        jsonb bounding_box
-        float confidence
-        timestamp created_at
-    }
+Do not modify functionality during this audit.
 
-    FACE_PROFILE {
-        uuid id PK
-        uuid user_id FK
-        uuid organisation_id FK
-        vector reference_embedding_512
-        string selfie_storage_path
-        boolean consent_given
-        timestamp consent_timestamp
-    }
-```
+Create:
+
+`ARCHITECTURE_AUDIT.md`
 
 ---
 
-## 6. End-to-End Media Ingestion & Processing Pipeline
+# PHASE 1 — FOUNDATION & MULTI-TENANCY
 
-### 6.1 Direct Presigned Bulk Upload Workflow
-1. **Initiate Upload Batch**: Client requests presigned S3/R2 multi-part upload URLs for $N$ files from the API.
-2. **Direct-to-S3 Upload**: Browser uploads binary chunks directly to Object Storage, preventing API server memory bottlenecks.
-3. **Completion Webhook**: Client notifies the API of upload completion; DB creates `MEDIA_ITEM` records with status `PENDING_PROCESSING`.
-4. **BullMQ Dispatch**: Jobs are enqueued to `image-processing-queue`, `video-processing-queue`, and `face-detection-queue`.
+Implement the organisation architecture first.
 
-### 6.2 Photo Compression & Optimization Worker
-* **Input**: Original image binary from S3.
-* **Processing**:
-  - EXIF orientation correction and metadata extraction.
-  - Generates **Thumbnail** (400px width, WebP/AVIF, quality 80).
-  - Generates **Web Optimized Display** (1920px max width, WebP/AVIF, smart chroma subsampling, quality 82).
-  - Generates **High-Res Archive** variant.
-* **Storage**: Uploads derivatives to S3 and updates `MEDIA_VARIANT` table with CDN URLs.
+## Entities
 
-### 6.3 Video Transcoding & HLS Streaming Worker
-* **Input**: Original video file (MP4/MOV/MKV up to 4K).
-* **Processing**:
-  - Extracts poster thumbnail at 1s timestamp.
-  - Multi-rate transcode using FFmpeg (`libx264` / `libvpx-vp9` with CRF rate control):
-    - `1080p` (Full HD, 4500k bitrate, AAC 128k audio)
-    - `720p` (HD, 2500k bitrate, AAC 128k audio)
-    - `480p` (SD, 1000k bitrate, AAC 96k audio)
-  - Generates HLS Master Playlist (`.m3u8`) and `.ts` chunk segments for dynamic adaptive bitrate streaming.
-* **Storage**: Saves HLS segments to S3 and updates variant records.
+Create/verify:
 
-### 6.4 AI Face Recognition & "Find My Photos" Pipeline
-1. **Biometric Consent**: User reviews clear biometric consent terms and captures a live selfie.
-2. **Feature Extraction**: Face recognition worker detects bounding box coordinates, aligns facial landmarks, and computes a 512-dimensional normalized embedding vector.
-3. **Vector Indexing**: Stored in PostgreSQL using `pgvector` with HNSW (Hierarchical Navigable Small World) index for sub-millisecond retrieval.
-4. **1:N Face Search Query**:
-   ```sql
-   SELECT m.*, (f.embedding_512 <=> :user_selfie_vector) AS cosine_distance
-   FROM face_embeddings f
-   JOIN media_items m ON f.media_item_id = m.id
-   WHERE m.organisation_id = :org_id
-     AND m.event_id = :event_id
-     AND m.approval_status = 'APPROVED'
-     AND (f.embedding_512 <=> :user_selfie_vector) < 0.42
-   ORDER BY cosine_distance ASC
-   LIMIT 100;
-   ```
-5. **Result Presentation**: Instant, paginated gallery displaying only photos where the user appears, filtered strictly within authorized event scopes.
+* User
+* Organisation
+* OrganisationMember
+* Role
+* OrganisationAccessSettings
+* Event
+* Album
+* Media
 
----
+Every organisation-owned resource must have:
 
-## 7. Moderation, Workflow & Digital Archive Engine
+`organisation_id`
 
-### 7.1 Community Upload & Moderation Lifecycle
-* Attendees upload photos with flags `PUBLIC` or `FACE_ONLY`.
-* Content enters the **Admin Moderation Queue** in `PENDING` state.
-* Org Admins & Social Media Team leaders can:
-  - Batch approve, batch reject, quarantine, or soft-delete.
-  - Preview full-res media with EXIF metadata inspection.
-* Only `APPROVED` media transitions to public visibility in the main gallery.
-
-### 7.2 Digital Archive Explorer
-* Hierarchical drill-down: `Year (e.g. 2026)` $\rightarrow$ `Event (e.g. Annual Cultural Fest)` $\rightarrow$ `Albums (Cultural, Sports, Audience, BTS)` $\rightarrow$ `Media Grid`.
-* Real-time faceted search: Search by Keywords, Year, Date Range, Album, Media Type (Photo/Video), Tags, and Face Matching.
-
----
-
-## 8. Modular Implementation Roadmap
-
-This roadmap is designed for incremental execution when you provide implementation prompts one by one:
+Examples:
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                       MODULAR IMPLEMENTATION PHASES                         │
-├─────────┬───────────────────────────────────┬───────────────────────────────┤
-│ Phase   │ Focus Area                        │ Deliverables                  │
-├─────────┼───────────────────────────────────┼───────────────────────────────┤
-│ Phase 1 │ Core Infrastructure & Database    │ Next.js + TS + Tailwind init, │
-│         │                                   │ PostgreSQL Schema & Migrations│
-├─────────┼───────────────────────────────────┼───────────────────────────────┤
-│ Phase 2 │ Multi-Tenant Auth & Org Portal    │ Org Registration, Subdomains, │
-│         │                                   │ Org Access Pass System, RBAC  │
-├─────────┼───────────────────────────────────┼───────────────────────────────┤
-│ Phase 3 │ Event & Album Management Core     │ Year-wise Event CRUD, Albums, │
-│         │                                   │ Permissions & Cover Management│
-├─────────┼───────────────────────────────────┼───────────────────────────────┤
-│ Phase 4 │ Ingestion Engine & Storage Setup  │ S3 / R2 Presigned Uploads,    │
-│         │                                   │ Resumable Chunks, Upload Queue│
-├─────────┼───────────────────────────────────┼───────────────────────────────┤
-│ Phase 5 │ Media Workers (Image & Video)     │ Sharp Image Processing,       │
-│         │                                   │ FFmpeg Video Transcoding & HLS│
-├─────────┼───────────────────────────────────┼───────────────────────────────┤
-│ Phase 6 │ Rich Galleries & Bulk Uploader    │ Masonry Gallery, Lightbox,    │
-│         │                                   │ 500+ File Bulk Upload Matrix  │
-├─────────┼───────────────────────────────────┼───────────────────────────────┤
-│ Phase 7 │ Community Uploads & Moderation    │ Public/Face Flags, Moderation │
-│         │                                   │ Dashboard, Batch Actions      │
-├─────────┼───────────────────────────────────┼───────────────────────────────┤
-│ Phase 8 │ AI Face Engine (Find My Photos)   │ Biometric Consent, FaceNet/   │
-│         │                                   │ pgvector Similarity Search    │
-├─────────┼───────────────────────────────────┼───────────────────────────────┤
-│ Phase 9 │ Archive Search, Analytics & Audit │ Faceted Search, Storage Meter,│
-│         │                                   │ Immutable Audit Logs, Branding│
-├─────────┼───────────────────────────────────┼───────────────────────────────┤
-│ Phase 10│ SaaS Subscriptions, Polish & Ops  │ Tier Limits, Docker Compose,  │
-│         │                                   │ Production CI/CD & CDN Tuning │
-└─────────┴───────────────────────────────────┴───────────────────────────────┘
+organisations
+organisation_members
+events
+albums
+media
+media_approvals
+audit_logs
+```
+
+## Critical Rule
+
+Every request must validate:
+
+```text
+Authenticated User
+        ↓
+Organisation Membership
+        ↓
+Role
+        ↓
+Resource Organisation
+        ↓
+Permission
+```
+
+Never trust an organisation ID supplied by the frontend.
+
+Prevent:
+
+```text
+Organisation A user
+        ↓
+manually changes organisationId
+        ↓
+access Organisation B
+```
+
+This must fail with HTTP 403.
+
+## Roles
+
+Implement:
+
+```text
+PLATFORM_ADMIN
+ORGANISATION_OWNER
+ORGANISATION_ADMIN
+SOCIAL_MEDIA_MANAGER
+SOCIAL_MEDIA_MEMBER
+MODERATOR
+USER
 ```
 
 ---
 
-## 9. Current Status & Next Action
+# PHASE 2 — AUTHENTICATION & ORGANISATION ACCESS
 
-- **Git Repository Initialized**: Connected to `https://github.com/bhagyabratagantayat/Media-Share-Platform.git` on `main` branch.
-- **Architectural Plan Documented**: Ready for step-by-step modular code implementation.
-- **Awaiting User Instruction**: Standby for Phase 1 / Step 1 implementation prompt.
+Implement:
+
+## Platform authentication
+
+* Registration
+* Login
+* Logout
+* Email verification
+* Password reset
+* Secure session management
+
+## Organisation
+
+Organisation can:
+
+* Create account
+* Configure profile
+* Create access password
+* Change access password
+* Rotate access password
+* Disable access password
+
+Never store access passwords in plaintext.
+
+Store secure hashes.
+
+## User flow
+
+```text
+Platform
+   ↓
+Search Organisation
+   ↓
+Select Organisation
+   ↓
+Organisation Access Password
+   ↓
+User Login/Register
+   ↓
+Organisation Portal
+```
+
+A shared organisation access password is an access gate, NOT the user's identity.
+
+---
+
+# PHASE 3 — EVENT & ALBUM SYSTEM
+
+Implement:
+
+## Events
+
+Fields:
+
+```text
+id
+organisation_id
+name
+slug
+description
+event_date
+location
+cover_media_id
+visibility
+allow_user_uploads
+allow_downloads
+face_search_enabled
+created_by
+created_at
+updated_at
+```
+
+## Albums
+
+Every album belongs to an organisation and optionally an event.
+
+Support:
+
+* Create
+* Edit
+* Delete
+* Reorder
+* Cover image
+
+Example:
+
+```text
+Independence Day 2026
+ ├── Flag Hoisting
+ ├── Cultural Program
+ ├── Audience
+ ├── Prize Distribution
+ └── Official Photos
+```
+
+---
+
+# PHASE 4 — MEDIA METADATA ARCHITECTURE
+
+Do not store binary media inside PostgreSQL.
+
+PostgreSQL should store metadata.
+
+Example:
+
+```text
+media
+
+id
+organisation_id
+event_id
+album_id
+uploader_id
+media_type
+status
+visibility
+face_search_enabled
+original_storage_key
+optimized_storage_key
+thumbnail_storage_key
+streaming_storage_key
+original_size
+optimized_size
+mime_type
+width
+height
+duration
+codec
+processing_status
+created_at
+updated_at
+```
+
+Database = metadata.
+
+Object storage = actual files.
+
+CDN = delivery.
+
+---
+
+# PHASE 5 — PRODUCTION STORAGE ARCHITECTURE
+
+Use:
+
+```text
+Browser
+   ↓
+Application API
+   ↓
+Create Upload Session
+   ↓
+Signed Upload URL
+   ↓
+Object Storage
+```
+
+Do NOT upload large videos through:
+
+```text
+Browser → Node.js → Object Storage
+```
+
+unless there is a specific reason.
+
+Instead:
+
+```text
+Browser
+   ↓
+Signed URL / Multipart Upload
+   ↓
+S3-compatible Object Storage
+```
+
+This prevents the application server from becoming a bottleneck.
+
+Recommended storage:
+
+* AWS S3
+* Cloudflare R2
+* Google Cloud Storage
+* Azure Blob Storage
+
+Use whichever is selected for deployment.
+
+---
+
+# PHASE 6 — LARGE FILE / MULTIPART UPLOAD
+
+For large videos implement multipart/resumable upload.
+
+Requirements:
+
+* Chunked uploads
+* Upload progress
+* Retry failed chunks
+* Resume interrupted uploads
+* Cancel upload
+* Parallel chunk upload
+* Upload session expiration
+* Server-side completion verification
+
+Flow:
+
+```text
+Select Video
+     ↓
+Create Upload Session
+     ↓
+Split Into Chunks
+     ↓
+Upload Chunks Directly
+     ↓
+Complete Multipart Upload
+     ↓
+Create Media Record
+     ↓
+Queue Processing
+```
+
+If internet disconnects:
+
+```text
+Already uploaded chunks
+        ↓
+Keep them
+        ↓
+Resume remaining chunks
+```
+
+Do not force the user to restart a 2 GB upload from zero.
+
+---
+
+# PHASE 7 — MEDIA PROCESSING QUEUE
+
+Never compress large media inside the HTTP request.
+
+Bad:
+
+```text
+POST /upload
+   ↓
+Upload
+   ↓
+Compress 500 MB video
+   ↓
+Wait
+   ↓
+HTTP response
+```
+
+Good:
+
+```text
+Upload
+   ↓
+Store original
+   ↓
+Create processing job
+   ↓
+Return immediately
+   ↓
+Background worker
+   ↓
+Compression
+   ↓
+Thumbnail
+   ↓
+Streaming version
+   ↓
+Update database
+```
+
+Use:
+
+* Redis
+* BullMQ
+* Or equivalent reliable job queue
+
+Jobs:
+
+```text
+IMAGE_PROCESS
+VIDEO_PROCESS
+THUMBNAIL_GENERATE
+FACE_PROCESS
+MEDIA_SCAN
+NOTIFICATION
+```
+
+---
+
+# PHASE 8 — AUTOMATIC IMAGE COMPRESSION
+
+When an image is uploaded:
+
+```text
+Original
+ ↓
+Validate
+ ↓
+Process
+ ↓
+Generate optimized version
+ ↓
+Generate thumbnail
+ ↓
+Store
+```
+
+Requirements:
+
+* Reduce file size
+* Preserve visual quality
+* Preserve resolution when practical
+* Generate responsive sizes
+* Generate WebP/AVIF where appropriate
+* Keep original when plan allows
+
+Do not repeatedly compress the same file.
+
+Track:
+
+```text
+original_size
+optimized_size
+compression_ratio
+```
+
+---
+
+# PHASE 9 — AUTOMATIC VIDEO COMPRESSION
+
+Implement FFmpeg-based background processing.
+
+Requirements:
+
+* Preserve resolution whenever possible
+* Preserve aspect ratio
+* Preserve frame rate where practical
+* Preserve audio quality
+* Reduce bitrate intelligently
+* Avoid noticeable quality degradation
+* Generate streaming-friendly versions
+* Generate thumbnails
+* Generate preview versions
+
+Do not promise mathematically lossless compression.
+
+Use:
+
+**High-quality / visually lossless optimisation where practical.**
+
+Support multiple output profiles when required.
+
+Example:
+
+```text
+Original 4K
+    ↓
+4K high-quality version
+    ↓
+1080p streaming version
+    ↓
+720p streaming version
+```
+
+The original should remain available according to the organisation's storage plan.
+
+---
+
+# PHASE 10 — CDN ARCHITECTURE
+
+This is essential for 500+ users.
+
+Do NOT make the backend serve every image/video.
+
+Use:
+
+```text
+Object Storage
+      ↓
+CDN
+      ↓
+Users
+```
+
+Examples:
+
+* Cloudflare CDN
+* CloudFront
+* equivalent CDN
+
+Gallery images should be cached.
+
+Video delivery should use CDN/streaming URLs.
+
+The application server should mostly provide metadata and signed access URLs.
+
+---
+
+# PHASE 11 — CACHING
+
+Use caching carefully.
+
+Cache:
+
+* Organisation list
+* Organisation profile
+* Event list
+* Event metadata
+* Album metadata
+* Gallery pagination metadata
+* Public media metadata
+* User permissions where appropriate
+
+Do NOT blindly cache sensitive data.
+
+Recommended:
+
+```text
+Browser Cache
+      ↓
+CDN Cache
+      ↓
+Redis Cache
+      ↓
+Database
+```
+
+Cache invalidation must happen when:
+
+* Event changes
+* Media is deleted
+* Media visibility changes
+* Approval status changes
+* Organisation settings change
+
+Never allow deleted/private media to remain publicly accessible because of stale caching.
+
+---
+
+# PHASE 12 — DATABASE PERFORMANCE
+
+Add proper indexes.
+
+Examples:
+
+```text
+events:
+INDEX(organisation_id)
+INDEX(organisation_id, event_date)
+
+media:
+INDEX(organisation_id)
+INDEX(event_id)
+INDEX(album_id)
+INDEX(uploader_id)
+INDEX(status)
+INDEX(created_at)
+
+organisation_members:
+INDEX(user_id)
+INDEX(organisation_id)
+UNIQUE(user_id, organisation_id)
+```
+
+Use composite indexes based on real query patterns.
+
+Avoid:
+
+```text
+SELECT *
+```
+
+for large datasets.
+
+Use pagination.
+
+Never load 10,000 media records in one API response.
+
+---
+
+# PHASE 13 — GALLERY PERFORMANCE
+
+Never send original 10 MB photos to the gallery.
+
+Use:
+
+```text
+Gallery
+ ↓
+Thumbnail
+ ↓
+Optimized image
+ ↓
+Original only when requested
+```
+
+Implement:
+
+* Lazy loading
+* Pagination/infinite scrolling
+* Responsive image sizes
+* CDN caching
+* Thumbnail generation
+* Virtualised lists where appropriate
+
+Example:
+
+```text
+100,000 photos
+```
+
+The browser should only receive the small subset currently visible.
+
+---
+
+# PHASE 14 — REAL-TIME UPLOAD STATUS
+
+Provide real-time processing status.
+
+Example:
+
+```text
+Uploading
+████████░░ 80%
+
+Upload Complete
+
+Processing
+██████░░░░ 60%
+
+Optimizing Video...
+
+Generating Thumbnail...
+
+Ready ✓
+```
+
+Use:
+
+* WebSocket
+* Server-Sent Events
+* or reliable polling
+
+Do not keep an HTTP request open for long-running media processing.
+
+---
+
+# PHASE 15 — CONCURRENT USER ARCHITECTURE
+
+Target:
+
+**500+ concurrent users**
+
+Design the application as stateless wherever possible.
+
+Multiple application instances should be able to run simultaneously.
+
+```text
+                 Load Balancer
+                      │
+          ┌───────────┼───────────┐
+          ▼           ▼           ▼
+       API #1       API #2      API #3
+          │           │           │
+          └───────────┼───────────┘
+                      ▼
+                   Redis
+                      │
+                  PostgreSQL
+                      │
+                Object Storage
+                      │
+                     CDN
+```
+
+Any API server should be able to handle any authenticated request.
+
+Do not store important session state only in local server memory.
+
+---
+
+# PHASE 16 — DATABASE CONNECTION POOLING
+
+Configure PostgreSQL connection pooling.
+
+Do not create a new database connection for every request.
+
+Use a connection pool and tune it based on actual infrastructure.
+
+If traffic grows significantly, consider:
+
+* PgBouncer
+* Read replicas
+* Database scaling
+* Query optimisation
+
+Do not add read replicas prematurely.
+
+Measure first.
+
+---
+
+# PHASE 17 — RATE LIMITING
+
+Protect APIs.
+
+Different limits for:
+
+```text
+Login
+Password attempts
+Organisation access verification
+Upload session creation
+Face search
+Search
+Download URL generation
+Admin APIs
+```
+
+Example concept:
+
+```text
+Login → strict
+Search → moderate
+Gallery → high
+Face search → strict
+Admin → strict
+```
+
+Return proper HTTP 429 responses when limits are exceeded.
+
+---
+
+# PHASE 18 — DOWNLOAD ARCHITECTURE
+
+Do not proxy large downloads through Node.js.
+
+Instead:
+
+```text
+User
+ ↓
+Request Download Permission
+ ↓
+API verifies permission
+ ↓
+Generate short-lived signed URL
+ ↓
+CDN/Object Storage
+ ↓
+User
+```
+
+This allows many users to download simultaneously without exhausting application-server bandwidth.
+
+For very large files:
+
+* Support resumable downloads where infrastructure allows
+* Use CDN
+* Use appropriate cache headers
+
+---
+
+# PHASE 19 — UPLOAD/DOWNLOAD ISOLATION
+
+Uploads and downloads must not compete for application-server resources.
+
+Bad:
+
+```text
+API Server
+ ├── Upload videos
+ ├── Compress videos
+ ├── Serve videos
+ ├── Serve images
+ └── API requests
+```
+
+Good:
+
+```text
+API Server
+ └── Authentication + Metadata + Permissions
+
+Object Storage
+ └── Files
+
+CDN
+ └── Downloads
+
+Workers
+ └── Compression + Processing
+```
+
+This separation is one of the most important requirements for 500+ concurrent users.
+
+---
+
+# PHASE 20 — USER UPLOAD APPROVAL
+
+Normal user:
+
+```text
+Upload
+ ↓
+Object Storage
+ ↓
+Media status = PROCESSING
+ ↓
+Compression
+ ↓
+Media status = PENDING_APPROVAL
+ ↓
+Admin Review
+ ↓
+APPROVED
+ ↓
+Visible
+```
+
+Do not expose media before the appropriate approval state.
+
+---
+
+# PHASE 21 — SOCIAL MEDIA TEAM BULK UPLOAD
+
+For official team uploads:
+
+```text
+Create Event
+ ↓
+Bulk Upload
+ ↓
+Multipart Upload
+ ↓
+Object Storage
+ ↓
+Processing Queue
+ ↓
+Compression
+ ↓
+Thumbnail
+ ↓
+Optional Face Processing
+ ↓
+Publish
+```
+
+Allow:
+
+* 100s of photos
+* Large video batches
+* Retry
+* Resume
+* Batch cancellation
+* Batch progress
+* Batch failure reporting
+
+---
+
+# PHASE 22 — FACE SEARCH
+
+Implement this only after the core media system is stable.
+
+Architecture:
+
+```text
+User
+ ↓
+Consent
+ ↓
+Selfie
+ ↓
+Face Worker
+ ↓
+Embedding
+ ↓
+Search permitted media
+ ↓
+Matching results
+```
+
+Face processing must be asynchronous.
+
+Never make the main API server process hundreds of face images synchronously.
+
+---
+
+# PHASE 23 — SECURITY TESTING
+
+Before production, test:
+
+### Authentication
+
+* Brute force
+* Session hijacking
+* Password reset
+* Token/session expiration
+
+### Authorisation
+
+Try:
+
+```text
+User A → Organisation B
+User → Admin API
+Team member → Owner API
+Organisation A → Organisation B media
+```
+
+Everything unauthorised must return 401/403.
+
+### Upload
+
+Test:
+
+* Invalid MIME
+* Malicious files
+* Huge files
+* Fake extensions
+* Duplicate uploads
+
+### Storage
+
+Ensure users cannot modify storage paths manually to access another organisation's files.
+
+---
+
+# PHASE 24 — OBSERVABILITY
+
+Production software needs visibility.
+
+Implement:
+
+## Application logs
+
+Track:
+
+* API errors
+* Authentication failures
+* Upload failures
+* Processing failures
+* Database errors
+
+## Metrics
+
+Track:
+
+* Active users
+* Requests/second
+* API latency
+* Error rate
+* Upload throughput
+* Download traffic
+* Queue length
+* Processing time
+* Database performance
+* Cache hit ratio
+* Storage usage
+
+## Alerts
+
+Alert on:
+
+* High error rate
+* Queue backlog
+* Storage failure
+* Database failure
+* High latency
+* Worker failure
+* Unusual authentication activity
+
+---
+
+# PHASE 25 — LOAD TESTING
+
+Do not claim the platform supports 500 users simply because it works locally.
+
+Create a load-testing environment.
+
+Test at least:
+
+### Test A
+
+500 concurrent users browsing events.
+
+### Test B
+
+500 users opening galleries.
+
+### Test C
+
+100+ users downloading media simultaneously.
+
+### Test D
+
+Multiple Social Media Team members uploading simultaneously.
+
+### Test E
+
+Large video uploads while users browse galleries.
+
+### Test F
+
+Media processing backlog.
+
+### Test G
+
+Database-heavy event search.
+
+### Test H
+
+Mixed workload:
+
+```text
+500 users
++
+uploads
++
+downloads
++
+gallery browsing
++
+search
++
+admin operations
+```
+
+Measure:
+
+* p50 latency
+* p95 latency
+* p99 latency
+* error rate
+* throughput
+* CPU
+* memory
+* database connections
+* Redis usage
+* queue length
+* storage throughput
+
+Use realistic file sizes.
+
+---
+
+# PHASE 26 — FAILURE TESTING
+
+Test what happens when:
+
+* Database temporarily disconnects
+* Redis restarts
+* Storage upload fails
+* Video worker crashes
+* Network disconnects during upload
+* CDN temporarily fails
+* User closes browser during upload
+* Processing job fails
+* Duplicate job is created
+
+The system must recover safely.
+
+Jobs should be:
+
+**Retryable + Idempotent**
+
+A failed video-processing job should not corrupt the original file.
+
+---
+
+# PHASE 27 — BACKUP & RECOVERY
+
+Implement:
+
+### Database
+
+* Automated backups
+* Point-in-time recovery if supported
+* Backup verification
+
+### Object Storage
+
+* Versioning where appropriate
+* Lifecycle policies
+* Replication according to requirements
+
+### Disaster Recovery
+
+Document:
+
+```text
+Database Recovery
+Storage Recovery
+Application Recovery
+Queue Recovery
+```
+
+Create:
+
+`DISASTER_RECOVERY.md`
+
+---
+
+# PHASE 28 — STORAGE LIFECYCLE
+
+Storage will become the largest cost.
+
+Implement lifecycle policies.
+
+Example:
+
+```text
+Active Media
+ ↓
+Frequently Accessed
+ ↓
+Older Media
+ ↓
+Archive Storage
+```
+
+Organisation plans can control:
+
+* Storage limit
+* Original retention
+* Archive duration
+* Deleted media retention
+* Video retention
+
+Do not automatically delete user data without a clearly defined retention policy.
+
+---
+
+# PHASE 29 — PRODUCTION DEPLOYMENT
+
+Use separate environments:
+
+```text
+Development
+     ↓
+Staging
+     ↓
+Production
+```
+
+Never test major migrations directly on production first.
+
+Production should have:
+
+* HTTPS
+* Secure environment variables
+* Database backups
+* CDN
+* Object storage
+* Redis
+* Worker instances
+* Monitoring
+* Error tracking
+* Logging
+* Rate limiting
+
+---
+
+# PHASE 30 — FINAL ARCHITECTURE
+
+Target architecture:
+
+```text
+                         INTERNET
+                            │
+                            ▼
+                     CDN / WAF / DNS
+                            │
+                            ▼
+                     Load Balancer
+                            │
+              ┌─────────────┼─────────────┐
+              ▼             ▼             ▼
+           API #1         API #2        API #3
+              │             │             │
+              └─────────────┼─────────────┘
+                            │
+              ┌─────────────┼─────────────┐
+              ▼             ▼             ▼
+          PostgreSQL      Redis        Auth System
+              │             │
+              │             ▼
+              │       Job Queue
+              │             │
+              │      ┌──────┼──────┐
+              │      ▼      ▼      ▼
+              │    Image  Video   Face
+              │    Worker Worker Worker
+              │      │      │      │
+              └──────┴──────┴──────┘
+                            │
+                            ▼
+                     Object Storage
+                            │
+                            ▼
+                           CDN
+                            │
+                            ▼
+                           USERS
+```
+
+---
+
+# PHASE 31 — ANTIGRAVITY EXECUTION ORDER
+
+Give Antigravity these instructions sequentially.
+
+## TASK 01
+
+Audit the existing repository.
+
+Do not change functionality.
+
+Create:
+
+`ARCHITECTURE_AUDIT.md`
+
+---
+
+## TASK 02
+
+Implement/fix:
+
+* Database schema
+* Organisation isolation
+* Roles
+* Authentication
+* Authorisation
+
+Run tests.
+
+---
+
+## TASK 03
+
+Implement:
+
+* Organisation creation
+* Organisation directory
+* Organisation access password
+* Organisation dashboard
+
+Run tests.
+
+---
+
+## TASK 04
+
+Implement:
+
+* Events
+* Albums
+* Media metadata
+* Gallery
+
+Run tests.
+
+---
+
+## TASK 05
+
+Replace direct application-server media uploads with:
+
+**Signed multipart object-storage uploads.**
+
+Do not proceed until large-file upload works correctly.
+
+---
+
+## TASK 06
+
+Implement:
+
+* Background queue
+* Image compression
+* Video processing
+* Thumbnail generation
+* Processing status
+
+---
+
+## TASK 07
+
+Implement:
+
+* CDN
+* Optimized image delivery
+* Video delivery
+* Signed URLs
+* Download permissions
+
+---
+
+## TASK 08
+
+Implement:
+
+* Redis caching
+* Cache invalidation
+* Database indexes
+* Query optimisation
+* Pagination
+
+---
+
+## TASK 09
+
+Implement:
+
+* Social Media Team
+* Permissions
+* Bulk upload
+* Batch processing
+* Audit logs
+
+---
+
+## TASK 10
+
+Implement:
+
+* User uploads
+* Public/Face processing options
+* Approval system
+* Reports
+
+---
+
+## TASK 11
+
+Implement:
+
+* Real-time upload status
+* Processing status
+* Notifications
+
+---
+
+## TASK 12
+
+Implement:
+
+* Face discovery
+* Consent
+* Face processing queue
+* Face profile deletion
+* Privacy controls
+
+---
+
+## TASK 13
+
+Implement production security:
+
+* Rate limiting
+* Input validation
+* File validation
+* Secure headers
+* CSRF protection where applicable
+* Session security
+* API authorisation
+* Audit logging
+
+---
+
+## TASK 14
+
+Implement observability:
+
+* Structured logging
+* Error tracking
+* Metrics
+* Health endpoints
+* Worker monitoring
+
+---
+
+## TASK 15
+
+Perform load testing.
+
+Target:
+
+**500+ concurrent users**
+
+Do not simply test 500 HTTP requests.
+
+Test realistic mixed workloads.
+
+---
+
+## TASK 16
+
+Fix all bottlenecks discovered by load testing.
+
+Do not increase server size blindly.
+
+First identify whether the bottleneck is:
+
+* CPU
+* Memory
+* Database
+* Network
+* Object storage
+* CDN
+* Redis
+* Worker capacity
+* Connection pool
+* API design
+
+---
+
+## TASK 17
+
+Perform security testing.
+
+Specifically test cross-organisation access.
+
+---
+
+## TASK 18
+
+Perform failure/recovery testing.
+
+Verify:
+
+* Upload resume
+* Processing retry
+* Worker restart
+* Database recovery
+* Storage failure handling
+
+---
+
+## TASK 19
+
+Prepare production deployment.
+
+Create:
+
+```text
+DEPLOYMENT.md
+SECURITY.md
+ARCHITECTURE.md
+DISASTER_RECOVERY.md
+LOAD_TEST_REPORT.md
+API.md
+```
+
+---
+
+# PRODUCTION ACCEPTANCE CRITERIA
+
+Do not mark the project production-ready until all of these are true:
+
+* [ ] Multiple organisations work independently
+* [ ] Cross-organisation access is impossible
+* [ ] Organisation roles work correctly
+* [ ] Organisation access password works
+* [ ] Social Media Team accounts work
+* [ ] Events work
+* [ ] Albums work
+* [ ] Bulk upload works
+* [ ] Large video upload works
+* [ ] Resumable upload works
+* [ ] Automatic image compression works
+* [ ] Automatic video compression works
+* [ ] Background processing works
+* [ ] CDN delivery works
+* [ ] Downloads do not overload API servers
+* [ ] Gallery uses thumbnails/optimized media
+* [ ] Database pagination works
+* [ ] Database indexes are verified
+* [ ] Redis caching works
+* [ ] Cache invalidation works
+* [ ] User uploads require approval
+* [ ] Face processing is isolated and consent-based
+* [ ] Rate limiting works
+* [ ] Audit logging works
+* [ ] Error monitoring works
+* [ ] Automated backups work
+* [ ] Failure recovery works
+* [ ] 500+ concurrent-user load test passes
+* [ ] No critical security vulnerabilities remain
+* [ ] Production deployment documentation exists
+
+# MOST IMPORTANT ARCHITECTURAL RULE
+
+The final system must follow:
+
+**API handles control.
+Object storage handles files.
+CDN handles delivery.
+Workers handle processing.
+Redis handles caching/queues.
+PostgreSQL handles structured data.
+Load balancer handles application traffic.**
+
+Do not build a system where the Node.js/Next.js application server receives, compresses and serves every large photo/video.
+
+That architecture may work during development but will become the bottleneck when hundreds of users simultaneously upload, browse and download event media.
