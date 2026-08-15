@@ -1,0 +1,151 @@
+// Prisma Schema for Organisation Event Media & Digital Memories Platform
+// Multi-Tenant, RBAC & Secure Media Foundation
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum OrgType {
+  COLLEGE
+  UNIVERSITY
+  SCHOOL
+  INSTITUTE
+  COMPANY
+  NGO
+  CLUB
+  EVENT_ORGANISATION
+  OTHER
+}
+
+enum OrgStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum MemberStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+enum Role {
+  PLATFORM_ADMIN
+  ORGANISATION_OWNER
+  ORGANISATION_ADMIN
+  SOCIAL_MEDIA_MANAGER
+  SOCIAL_MEDIA_MEMBER
+  MODERATOR
+  USER
+}
+
+model User {
+  id              String       @id @default(uuid())
+  name            String
+  email           String       @unique
+  passwordHash    String       @map("password_hash")
+  emailVerifiedAt DateTime?    @map("email_verified_at")
+  avatarUrl       String?      @map("avatar_url")
+  status          UserStatus   @default(ACTIVE)
+  isPlatformAdmin Boolean      @default(false) @map("is_platform_admin")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  lastLoginAt     DateTime?    @map("last_login_at")
+
+  memberships     OrganisationMember[]
+  auditLogs       AuditLog[]
+
+  @@index([email])
+  @@index([status])
+  @@map("users")
+}
+
+model Organisation {
+  id             String      @id @default(uuid())
+  name           String
+  slug           String      @unique
+  type           OrgType     @default(COLLEGE)
+  description    String?
+  officialEmail  String      @map("official_email")
+  contactPhone   String?     @map("contact_phone")
+  logoUrl        String?     @map("logo_url")
+  coverUrl       String?     @map("cover_url")
+  status         OrgStatus   @default(ACTIVE)
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  members        OrganisationMember[]
+  accessSettings OrganisationAccessSettings?
+  auditLogs      AuditLog[]
+
+  @@index([slug])
+  @@index([status])
+  @@map("organisations")
+}
+
+model OrganisationMember {
+  id             String        @id @default(uuid())
+  organisationId String        @map("organisation_id")
+  userId         String        @map("user_id")
+  role           Role          @default(USER)
+  status         MemberStatus  @default(ACTIVE)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  organisation   Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, userId], name: "unique_organisation_user")
+  @@index([userId])
+  @@index([organisationId])
+  @@index([organisationId, role])
+  @@map("organisation_members")
+}
+
+model OrganisationAccessSettings {
+  id                String       @id @default(uuid())
+  organisationId    String       @unique @map("organisation_id")
+  passwordHash      String       @map("password_hash")
+  enabled           Boolean      @default(true)
+  passwordChangedAt DateTime     @default(now()) @map("password_changed_at")
+  passwordExpiresAt DateTime?    @map("password_expires_at")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  organisation      Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@map("organisation_access_settings")
+}
+
+model AuditLog {
+  id             String        @id @default(uuid())
+  organisationId String?       @map("organisation_id")
+  actorUserId    String?       @map("actor_user_id")
+  action         String
+  resourceType   String        @map("resource_type")
+  resourceId     String?       @map("resource_id")
+  metadata       Json?
+  ipAddress      String?       @map("ip_address")
+  userAgent      String?       @map("user_agent")
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  organisation   Organisation? @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  actorUser      User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([resourceType, resourceId])
+  @@map("audit_logs")
+}
