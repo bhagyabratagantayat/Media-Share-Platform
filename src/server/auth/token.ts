@@ -13,6 +13,7 @@ export interface UserSessionPayload extends JWTPayload {
 export interface OrgAccessPassPayload extends JWTPayload {
   orgId: string;
   accessGranted: boolean;
+  version: number;
 }
 
 /**
@@ -40,9 +41,10 @@ export async function verifyUserSessionToken(token: string): Promise<UserSession
 
 /**
  * Signs an organisation-scoped access gate pass token (Valid for 24 hours).
+ * Includes accessVersion for instant revocation on password rotation.
  */
-export async function signOrgAccessPassToken(orgId: string): Promise<string> {
-  return await new SignJWT({ orgId, accessGranted: true })
+export async function signOrgAccessPassToken(orgId: string, version = 1): Promise<string> {
+  return await new SignJWT({ orgId, accessGranted: true, version })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('24h')
@@ -50,13 +52,27 @@ export async function signOrgAccessPassToken(orgId: string): Promise<string> {
 }
 
 /**
- * Verifies an organisation-scoped access pass token.
+ * Verifies an organisation-scoped access pass token against expected orgId and current accessVersion.
  */
-export async function verifyOrgAccessPassToken(token: string, expectedOrgId: string): Promise<boolean> {
+export async function verifyOrgAccessPassToken(
+  token: string,
+  expectedOrgId: string,
+  expectedVersion?: number
+): Promise<boolean> {
   try {
     const { payload } = await jwtVerify(token, sessionSecretKey);
     const pass = payload as OrgAccessPassPayload;
-    return pass.orgId === expectedOrgId && pass.accessGranted === true;
+
+    if (pass.orgId !== expectedOrgId || pass.accessGranted !== true) {
+      return false;
+    }
+
+    // If expectedVersion is specified, verify token was issued under active password version
+    if (expectedVersion !== undefined && pass.version !== expectedVersion) {
+      return false;
+    }
+
+    return true;
   } catch {
     return false;
   }

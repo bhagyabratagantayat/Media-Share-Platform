@@ -2,6 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  experimental: {
+    serverComponentsExternalPackages: ['@node-rs/argon2', '@prisma/client'],
+  },
   headers: async () => {
     return [
       {
