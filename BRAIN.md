@@ -82,9 +82,10 @@ service cloud.firestore {
 2. **Cloud Firestore (`media-share-website`)**:
    - Secondary real-time document store for rapid client metadata and user documents.
 
-### Storage & CDN
-- **Object Storage**: S3-compatible storage (MinIO for local dev, AWS S3 / Cloudflare R2 for production).
-- **Direct-to-Storage Architecture**: Files never proxy through Next.js server; client uploads directly via presigned S3 URLs and downloads via HMAC-signed CDN URLs.
+### Storage & CDN (Hybrid S3 & Cloudinary)
+- **Primary Media Storage**: **Cloudinary (`bbty6ctr`)** for zero-maintenance auto-optimization, video encoding, and direct uploads.
+- **S3-Compatible Object Storage**: S3 / Cloudflare R2 / MinIO supported via pluggable `StorageProvider` interface (`src/server/storage/`).
+- **Direct-to-Storage Architecture**: Media files never proxy through the Next.js server; clients upload directly using presigned/signed parameters (`/api/uploads/cloudinary-sign` and `/api/uploads/create`) and stream directly with CDN caching.
 
 ---
 

@@ -42,8 +42,12 @@ const envSchema = z.object({
   FFMPEG_PATH: z.string().optional(),
   FFPROBE_PATH: z.string().optional(),
 
-  // S3-Compatible Object Storage Architecture (Phase 4)
-  STORAGE_PROVIDER: z.enum(['s3', 'mock', 'local']).default('s3'),
+  // Object Storage Architecture (S3 or Cloudinary)
+  STORAGE_PROVIDER: z.enum(['s3', 'mock', 'local', 'cloudinary']).default('cloudinary'),
+  CLOUDINARY_CLOUD_NAME: z.string().optional().default(process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'bbty6ctr'),
+  CLOUDINARY_API_KEY: z.string().optional().default('769223324249544'),
+  CLOUDINARY_API_SECRET: z.string().optional().default('oKk-BtSMAYh2ndLABZn_Fbyb4tg'),
+  CLOUDINARY_URL: z.string().optional(),
   S3_ENDPOINT: z.string().optional(),
   S3_REGION: z.string().default('us-east-1'),
   S3_BUCKET: z.string().default('media-share-bucket'),
