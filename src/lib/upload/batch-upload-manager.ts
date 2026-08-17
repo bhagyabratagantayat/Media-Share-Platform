@@ -252,40 +252,103 @@ export class BatchUploadManager {
 
   /**
    * Uploads single file with XMLHttpRequest for granular progress tracking.
+   * Supports S3 PUT and Cloudinary POST FormData.
    */
   private uploadSinglePut(item: UploadFileItem, uploadUrl: string, signal: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('PUT', uploadUrl, true);
-      xhr.setRequestHeader('Content-Type', item.file.type || 'application/octet-stream');
+      const isCloudinary = uploadUrl.includes('cloudinary.com');
 
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          item.uploadedBytes = e.loaded;
-          item.progress = Math.min(99, Math.round((e.loaded / e.total) * 100));
-          this.options.onItemProgress?.(item);
-          this.updateOverallProgress();
+      if (isCloudinary) {
+        try {
+          const parsedUrl = new URL(uploadUrl);
+          const timestamp = parsedUrl.searchParams.get('timestamp');
+          const publicId = parsedUrl.searchParams.get('public_id');
+          const apiKey = parsedUrl.searchParams.get('api_key');
+          const signature = parsedUrl.searchParams.get('signature');
+          const uploadPreset = parsedUrl.searchParams.get('upload_preset');
+
+          const baseEndpoint = `${parsedUrl.origin}${parsedUrl.pathname}`;
+          xhr.open('POST', baseEndpoint, true);
+
+          const formData = new FormData();
+          formData.append('file', item.file);
+          if (apiKey) formData.append('api_key', apiKey);
+          if (timestamp) formData.append('timestamp', timestamp);
+          if (signature) formData.append('signature', signature);
+          if (publicId) formData.append('public_id', publicId);
+          if (uploadPreset) formData.append('upload_preset', uploadPreset);
+
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              item.uploadedBytes = e.loaded;
+              item.progress = Math.min(99, Math.round((e.loaded / e.total) * 100));
+              this.options.onItemProgress?.(item);
+              this.updateOverallProgress();
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+            } else {
+              let msg = `Cloudinary returned ${xhr.status}`;
+              try {
+                const parsed = JSON.parse(xhr.responseText);
+                if (parsed.error?.message) {
+                  msg = parsed.error.message;
+                }
+              } catch {}
+              reject(new Error(msg));
+            }
+          };
+
+          xhr.onerror = () => {
+            reject(new Error('Network error occurred during Cloudinary upload.'));
+          };
+
+          xhr.onabort = () => {
+            reject(new Error('Upload aborted by user.'));
+          };
+
+          signal.addEventListener('abort', () => xhr.abort());
+          xhr.send(formData);
+        } catch (err: any) {
+          reject(err);
         }
-      };
+      } else {
+        // Standard S3 PUT
+        xhr.open('PUT', uploadUrl, true);
+        xhr.setRequestHeader('Content-Type', item.file.type || 'application/octet-stream');
 
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve();
-        } else {
-          reject(new Error(`Storage server returned HTTP ${xhr.status}: ${xhr.statusText}`));
-        }
-      };
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            item.uploadedBytes = e.loaded;
+            item.progress = Math.min(99, Math.round((e.loaded / e.total) * 100));
+            this.options.onItemProgress?.(item);
+            this.updateOverallProgress();
+          }
+        };
 
-      xhr.onerror = () => {
-        reject(new Error('Network error occurred during direct storage upload.'));
-      };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`Storage server returned HTTP ${xhr.status}: ${xhr.statusText}`));
+          }
+        };
 
-      xhr.onabort = () => {
-        reject(new Error('Upload aborted.'));
-      };
+        xhr.onerror = () => {
+          reject(new Error('Network error occurred during direct storage upload.'));
+        };
 
-      signal.addEventListener('abort', () => xhr.abort());
-      xhr.send(item.file);
+        xhr.onabort = () => {
+          reject(new Error('Upload aborted.'));
+        };
+
+        signal.addEventListener('abort', () => xhr.abort());
+        xhr.send(item.file);
+      }
     });
   }
 

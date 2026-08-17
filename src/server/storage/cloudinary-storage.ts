@@ -26,6 +26,13 @@ export class CloudinaryStorageProvider implements StorageProvider {
     const timestamp = Math.round(new Date().getTime() / 1000);
     const publicId = this.sanitizePublicId(key);
     const resourceType = contentType.startsWith('video/') ? 'video' : 'auto';
+    const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET;
+
+    if (uploadPreset) {
+      return `https://api.cloudinary.com/v1_1/${this.cloudName}/${resourceType}/upload?upload_preset=${encodeURIComponent(
+        uploadPreset
+      )}&public_id=${encodeURIComponent(publicId)}`;
+    }
 
     const paramsToSign: Record<string, any> = {
       public_id: publicId,
