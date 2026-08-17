@@ -71,3 +71,5 @@ export class RateLimitError extends AppError {
     this.name = 'RateLimitError';
   }
 }
+
+export { errorResponse as handleApiError } from './api-response';

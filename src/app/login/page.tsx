@@ -3,7 +3,13 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LogIn, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
+import { LogIn, AlertCircle, ArrowRight } from 'lucide-react';
+import {
+  signInWithEmailAndPassword,
+  signInWithPopup,
+} from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, db, googleProvider } from '@/lib/firebase/client';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,29 +18,96 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const syncSessionAndFirestore = async (user: {
+    uid: string;
+    email: string | null;
+    displayName: string | null;
+    photoURL: string | null;
+  }) => {
+    const userDisplayName = user.displayName || user.email?.split('@')[0] || 'User';
+
+    // 1. Sync Firestore user doc
+    try {
+      await setDoc(
+        doc(db, 'users', user.uid),
+        {
+          id: user.uid,
+          name: userDisplayName,
+          email: user.email?.toLowerCase().trim(),
+          avatarUrl: user.photoURL || null,
+          isPlatformAdmin: false,
+          status: 'ACTIVE',
+          lastLoginAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    } catch (firestoreErr) {
+      console.warn('[Firestore] Error saving user record:', firestoreErr);
+    }
+
+    // 2. Establish Platform Cookie Session
+    const res = await fetch('/api/auth/firebase-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uid: user.uid,
+        email: user.email,
+        displayName: userDisplayName,
+        photoURL: user.photoURL,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error(data.error?.message || 'Failed to establish platform session.');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
+      // 1. Firebase Authentication: Sign in
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
 
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        setError(data.error?.message || 'Login failed. Please verify your credentials.');
-        return;
-      }
+      // 2. Establish Platform Session & Cookie
+      await syncSessionAndFirestore(userCredential.user);
 
       router.push('/profile');
       router.refresh();
-    } catch {
-      setError('An unexpected network error occurred. Please try again.');
+    } catch (err: any) {
+      console.error('Login Error:', err);
+      if (
+        err.code === 'auth/invalid-credential' ||
+        err.code === 'auth/wrong-password' ||
+        err.code === 'auth/user-not-found'
+      ) {
+        setError('Invalid email or password.');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Too many failed attempts. Please try again later.');
+      } else {
+        setError(err.message || 'Login failed. Please verify your credentials.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      await syncSessionAndFirestore(result.user);
+      router.push('/profile');
+      router.refresh();
+    } catch (err: any) {
+      console.error('Google Sign-In Error:', err);
+      if (err.code !== 'auth/popup-closed-by-user') {
+        setError(err.message || 'Google sign-in failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -57,6 +130,41 @@ export default function LoginPage() {
             <span>{error}</span>
           </div>
         )}
+
+        {/* Google 1-Click Sign-In */}
+        <button
+          type="button"
+          onClick={handleGoogleSignIn}
+          disabled={loading}
+          className="w-full mb-5 py-2.5 px-4 rounded-xl font-medium text-sm text-slate-200 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24">
+            <path
+              fill="#EA4335"
+              d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.2 9 5 12 5z"
+            />
+            <path
+              fill="#4285F4"
+              d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.8z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3 0-.8.1-1.6.4-2.3L1.9 7.3C.7 9.7 0 12.3 0 15.2s.7 5.5 1.9 7.9l3.7-2.9z"
+            />
+            <path
+              fill="#34A853"
+              d="M12 23.5c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.2-6.4-5.2L1.9 16.5C3.7 20.2 7.5 23.5 12 23.5z"
+            />
+          </svg>
+          <span>Continue with Google</span>
+        </button>
+
+        <div className="relative flex items-center justify-center mb-5">
+          <div className="border-t border-slate-800 w-full" />
+          <span className="bg-slate-900 px-3 text-xs uppercase text-slate-500 font-semibold tracking-wider absolute">
+            or with email
+          </span>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

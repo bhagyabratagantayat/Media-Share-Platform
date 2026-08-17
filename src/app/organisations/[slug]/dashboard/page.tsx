@@ -17,6 +17,9 @@ import {
   Lock,
   ArrowLeft,
   CheckCircle2,
+  UploadCloud,
+  CheckSquare,
+  Search,
 } from 'lucide-react';
 
 interface DashboardData {
@@ -100,7 +103,16 @@ export default function OrganisationDashboardPage() {
   }
 
   const { organisation: org, access } = data;
-  const isOwnerOrAdmin = access.userRole === 'ORGANISATION_OWNER' || access.userRole === 'ORGANISATION_ADMIN' || access.userRole === 'PLATFORM_ADMIN';
+  const isOwnerOrAdmin =
+    access.userRole === 'ORGANISATION_OWNER' ||
+    access.userRole === 'ORGANISATION_ADMIN' ||
+    access.userRole === 'PLATFORM_ADMIN';
+  const isModeratorOrAbove =
+    isOwnerOrAdmin || access.userRole === 'MODERATOR';
+  const isSocialMediaTeam =
+    isOwnerOrAdmin ||
+    access.userRole === 'SOCIAL_MEDIA_MANAGER' ||
+    access.userRole === 'SOCIAL_MEDIA_MEMBER';
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
@@ -129,6 +141,14 @@ export default function OrganisationDashboardPage() {
             <Shield className="w-3.5 h-3.5 text-cyan-400" />
             Role: <span className="text-white">{access.userRole.replace('_', ' ')}</span>
           </span>
+
+          <Link
+            href={`/organisations/${org.slug}/events`}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-sm"
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            Events Space
+          </Link>
 
           {isOwnerOrAdmin && (
             <Link
@@ -173,51 +193,96 @@ export default function OrganisationDashboardPage() {
         </div>
       </div>
 
-      {/* Media & Event Modules (Phase 3+ Previews) */}
+      {/* Action Modules */}
       <div className="mb-8">
-        <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-4">
-          Digital Memory Archives
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">
+            Digital Memory Archives & Workflows
+          </h2>
+          <Link
+            href={`/organisations/${org.slug}/events`}
+            className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold"
+          >
+            Explore All Events →
+          </Link>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="p-6 rounded-2xl bg-slate-900/40 border border-slate-800/60 relative overflow-hidden group">
-            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mb-4">
+          <Link
+            href={`/organisations/${org.slug}/events`}
+            className="p-6 rounded-2xl bg-slate-900/70 border border-indigo-500/30 hover:border-indigo-500/70 relative overflow-hidden group transition duration-200 block"
+          >
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-4 group-hover:scale-110 transition">
               <Calendar className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-base text-white">Events & Festivals</h3>
+            <h3 className="font-bold text-base text-white group-hover:text-indigo-300 transition">
+              Events & Festivals Space
+            </h3>
             <p className="text-xs text-slate-400 mt-1 mb-4">
-              Categorised event folders (Annual Fests, Tech Symposiums, Convocations, Sports).
+              Categorised event galleries, album structuring, and high-performance search.
             </p>
-            <span className="inline-block px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-slate-800 text-slate-400">
-              Coming in Phase 3
+            <span className="inline-block px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-indigo-950 text-indigo-300 border border-indigo-800/60">
+              View Galleries →
             </span>
-          </div>
+          </Link>
 
-          <div className="p-6 rounded-2xl bg-slate-900/40 border border-slate-800/60 relative overflow-hidden group">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-4">
-              <Image className="w-5 h-5" />
-            </div>
-            <h3 className="font-bold text-base text-white">Photo Galleries</h3>
-            <p className="text-xs text-slate-400 mt-1 mb-4">
-              Multi-resolution image pipelines with automatic WebP compression and CDN delivery.
-            </p>
-            <span className="inline-block px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-slate-800 text-slate-400">
-              Coming in Phase 4
-            </span>
-          </div>
+          {isSocialMediaTeam && (
+            <Link
+              href={`/organisations/${org.slug}/upload`}
+              className="p-6 rounded-2xl bg-slate-900/70 border border-cyan-500/30 hover:border-cyan-500/70 relative overflow-hidden group transition duration-200 block"
+            >
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mb-4 group-hover:scale-110 transition">
+                <UploadCloud className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white group-hover:text-cyan-300 transition">
+                Social Media Batch Upload
+              </h3>
+              <p className="text-xs text-slate-400 mt-1 mb-4">
+                High-volume official direct uploads with background compression and metadata tagging.
+              </p>
+              <span className="inline-block px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-cyan-950 text-cyan-300 border border-cyan-800/60">
+                Official Upload Console →
+              </span>
+            </Link>
+          )}
 
-          <div className="p-6 rounded-2xl bg-slate-900/40 border border-slate-800/60 relative overflow-hidden group">
-            <div className="w-10 h-10 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-400 mb-4">
-              <Video className="w-5 h-5" />
+          {isModeratorOrAbove && (
+            <Link
+              href={`/organisations/${org.slug}/moderation`}
+              className="p-6 rounded-2xl bg-slate-900/70 border border-amber-500/30 hover:border-amber-500/70 relative overflow-hidden group transition duration-200 block"
+            >
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-4 group-hover:scale-110 transition">
+                <CheckSquare className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-base text-white group-hover:text-amber-300 transition">
+                Moderation Queue
+              </h3>
+              <p className="text-xs text-slate-400 mt-1 mb-4">
+                Review, approve, or reject user-submitted event photos and videos.
+              </p>
+              <span className="inline-block px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-amber-950 text-amber-300 border border-amber-800/60">
+                Review Submissions →
+              </span>
+            </Link>
+          )}
+
+          <Link
+            href={`/organisations/${org.slug}/face-discovery`}
+            className="p-6 rounded-2xl bg-slate-900/70 border border-indigo-500/30 hover:border-indigo-500/70 relative overflow-hidden group transition duration-200 block"
+          >
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-4 group-hover:scale-110 transition">
+              <Shield className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-base text-white">Video Hub</h3>
+            <h3 className="font-bold text-base text-white group-hover:text-indigo-300 transition">
+              Privacy-First Face Discovery
+            </h3>
             <p className="text-xs text-slate-400 mt-1 mb-4">
-              High-definition event recordings processed via asynchronous background workers.
+              Consent-driven face matching to discover your photos across approved event galleries.
             </p>
-            <span className="inline-block px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-slate-800 text-slate-400">
-              Coming in Phase 4
+            <span className="inline-block px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-indigo-950 text-indigo-300 border border-indigo-800/60">
+              Find My Photos →
             </span>
-          </div>
+          </Link>
         </div>
       </div>
     </div>

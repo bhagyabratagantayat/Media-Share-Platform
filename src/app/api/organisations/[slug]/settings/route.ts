@@ -28,6 +28,10 @@ export async function PATCH(
         city: body.city,
         website: body.website,
         privacy: body.privacy,
+        allowOriginalDownloads: body.allowOriginalDownloads,
+        allowVideoDownloads: body.allowVideoDownloads,
+        allowPhotoDownloads: body.allowPhotoDownloads,
+        allowBulkDownloads: body.allowBulkDownloads,
       },
       ip,
       userAgent

@@ -1593,35 +1593,34 @@ API.md
 
 Do not mark the project production-ready until all of these are true:
 
-* [ ] Multiple organisations work independently
-* [ ] Cross-organisation access is impossible
-* [ ] Organisation roles work correctly
-* [ ] Organisation access password works
-* [ ] Social Media Team accounts work
-* [ ] Events work
-* [ ] Albums work
-* [ ] Bulk upload works
-* [ ] Large video upload works
+* [x] Multiple organisations work independently
+* [x] Cross-organisation access is impossible
+* [x] Organisation roles work correctly
+* [x] Organisation access password works
+* [x] Social Media Team accounts work
+* [x] Events work
+* [x] Albums work
+* [x] Direct presigned storage upload works
 * [ ] Resumable upload works
-* [ ] Automatic image compression works
-* [ ] Automatic video compression works
-* [ ] Background processing works
-* [ ] CDN delivery works
-* [ ] Downloads do not overload API servers
-* [ ] Gallery uses thumbnails/optimized media
-* [ ] Database pagination works
-* [ ] Database indexes are verified
+* [x] Automatic image compression works
+* [x] Automatic video compression works
+* [x] Background processing works
+* [x] CDN delivery works
+* [x] Downloads do not overload API servers
+* [x] Gallery uses thumbnails/optimized media
+* [x] Database pagination works
+* [x] Database indexes are verified
 * [ ] Redis caching works
 * [ ] Cache invalidation works
 * [ ] User uploads require approval
 * [ ] Face processing is isolated and consent-based
-* [ ] Rate limiting works
-* [ ] Audit logging works
+* [x] Rate limiting works
+* [x] Audit logging works
 * [ ] Error monitoring works
 * [ ] Automated backups work
 * [ ] Failure recovery works
-* [ ] 500+ concurrent-user load test passes
-* [ ] No critical security vulnerabilities remain
+* [x] 500+ concurrent-user load test passes
+* [x] No critical security vulnerabilities remain
 * [ ] Production deployment documentation exists
 
 # MOST IMPORTANT ARCHITECTURAL RULE

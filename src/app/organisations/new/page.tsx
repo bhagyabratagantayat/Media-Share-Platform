@@ -1,12 +1,17 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Building2, Lock, Shield, AlertCircle, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Building2, Lock, AlertCircle, ArrowLeft, ArrowRight, LogIn } from 'lucide-react';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth } from '@/lib/firebase/client';
 
 export default function CreateOrganisationPage() {
   const router = useRouter();
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+
   const [formData, setFormData] = useState({
     name: '',
     slug: '',
@@ -25,6 +30,17 @@ export default function CreateOrganisationPage() {
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setAuthChecking(false);
+      if (user?.email && !formData.officialEmail) {
+        setFormData((prev) => ({ ...prev, officialEmail: user.email || '' }));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleNameChange = (name: string) => {
     const autoSlug = name
@@ -53,6 +69,21 @@ export default function CreateOrganisationPage() {
     setLoading(true);
 
     try {
+      // 1. Ensure Firebase session is synced if user is authenticated in Firebase
+      if (auth.currentUser) {
+        await fetch('/api/auth/firebase-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: auth.currentUser.uid,
+            email: auth.currentUser.email,
+            displayName: auth.currentUser.displayName,
+            photoURL: auth.currentUser.photoURL,
+          }),
+        });
+      }
+
+      // 2. Submit organisation creation
       const res = await fetch('/api/organisations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -62,13 +93,18 @@ export default function CreateOrganisationPage() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        setError(data.error?.message || 'Failed to create organisation.');
+        if (res.status === 401) {
+          setError('You must be logged in to create an organisation. Please sign in first.');
+        } else {
+          setError(data.error?.message || 'Failed to create organisation.');
+        }
         return;
       }
 
-      router.push(`/organisations/${data.data.slug}/dashboard`);
+      router.push(`/organisations/${data.data.slug}`);
+      router.refresh();
     } catch {
-      setError('An unexpected error occurred. Please try again.');
+      setError('An unexpected error occurred. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -83,6 +119,22 @@ export default function CreateOrganisationPage() {
         <ArrowLeft className="w-4 h-4" />
         Back to Directory
       </Link>
+
+      {!authChecking && !currentUser && (
+        <div className="mb-6 p-4 rounded-xl bg-amber-950/40 border border-amber-800/60 text-amber-300 text-sm flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+            <span>You are not logged in. Please sign in or create an account first.</span>
+          </div>
+          <Link
+            href="/login"
+            className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition-colors shrink-0 flex items-center gap-1.5"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            Sign In
+          </Link>
+        </div>
+      )}
 
       <div className="p-8 rounded-2xl bg-slate-900/70 border border-slate-800 shadow-2xl backdrop-blur-xl">
         <div className="flex items-center gap-3 mb-6">
@@ -252,7 +304,6 @@ export default function CreateOrganisationPage() {
             </div>
             <p className="text-xs text-slate-400">
               This password will be entered by students/members to enter this organisation&apos;s digital space.
-              Hashed securely with Argon2id.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

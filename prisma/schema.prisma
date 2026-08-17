@@ -32,6 +32,7 @@ enum OrgStatus {
   PENDING
   ACTIVE
   SUSPENDED
+  ARCHIVED
 }
 
 enum OrgPrivacy {
@@ -56,6 +57,164 @@ enum Role {
   USER
 }
 
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  ONGOING
+  COMPLETED
+  ARCHIVED
+}
+
+enum EventCategory {
+  ACADEMIC
+  CULTURAL
+  SPORTS
+  TECHNICAL
+  FESTIVAL
+  CEREMONY
+  WORKSHOP
+  SEMINAR
+  HACKATHON
+  OTHER
+}
+
+enum EventVisibility {
+  PRIVATE
+  ORGANISATION
+  PUBLIC
+}
+
+enum AlbumStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum MediaStatus {
+  UPLOADING
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+  DELETED
+}
+
+enum ApprovalStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MediaVisibility {
+  PUBLIC
+  ORGANISATION
+  PRIVATE
+}
+
+enum VariantType {
+  ORIGINAL
+  OPTIMIZED
+  THUMBNAIL
+  PREVIEW
+  STREAM_1080P
+  STREAM_720P
+  STREAM_480P
+}
+
+enum UploadStatus {
+  CREATED
+  UPLOADING
+  COMPLETED
+  EXPIRED
+  FAILED
+  CANCELLED
+}
+
+enum UploadType {
+  OFFICIAL
+  USER_SUBMISSION
+}
+
+enum UploadBatchStatus {
+  CREATED
+  VALIDATING
+  UPLOADING
+  PROCESSING
+  COMPLETED
+  PARTIALLY_FAILED
+  FAILED
+  CANCELLED
+}
+
+enum UploadBatchItemStatus {
+  PENDING
+  UPLOADING
+  PROCESSING
+  READY
+  FAILED
+  CANCELLED
+}
+
+enum ConsentStatus {
+  ACTIVE
+  WITHDRAWN
+  EXPIRED
+}
+
+enum FaceProfileStatus {
+  NOT_CREATED
+  PROCESSING
+  ACTIVE
+  FAILED
+  REVOKED
+  DELETED
+}
+
+enum FaceJobType {
+  USER_SELFIE
+  MEDIA_INDEXING
+  PROFILE_DELETION
+  RETENTION_CLEANUP
+}
+
+enum FaceJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum FaceFailureType {
+  TRANSIENT
+  PERMANENT
+  QUALITY_FAILURE
+  MODEL_FAILURE
+  STORAGE_FAILURE
+}
+
+enum ExportScope {
+  SELECTED_MEDIA
+  ALBUM
+  EVENT
+  ORGANISATION
+}
+
+enum ExportStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
 model User {
   id                  String               @id @default(uuid())
   name                String
@@ -72,6 +231,16 @@ model User {
   memberships         OrganisationMember[]
   auditLogs           AuditLog[]
   passwordResetTokens PasswordResetToken[]
+  createdEvents       Event[]              @relation("EventCreator")
+  createdAlbums       Album[]              @relation("AlbumCreator")
+  uploadedMedia       MediaItem[]          @relation("MediaUploader")
+  uploadSessions      UploadSession[]
+  createdBatches      UploadBatch[]        @relation("BatchCreator")
+  moderationActions   MediaModerationAction[]
+  notifications       Notification[]
+  faceConsents        FaceDiscoveryConsent[]
+  faceProfiles        FaceProfile[]
+  exportJobs          MediaExportJob[]
 
   @@index([email])
   @@index([status])
@@ -94,33 +263,84 @@ model PasswordResetToken {
 }
 
 model Organisation {
-  id             String                      @id @default(uuid())
-  name           String
-  slug           String                      @unique
-  type           OrgType                     @default(COLLEGE)
-  description    String?
-  officialEmail  String                      @map("official_email")
-  contactPhone   String?                     @map("contact_phone")
-  country        String?
-  state          String?
-  city           String?
-  website        String?
-  logoUrl        String?                     @map("logo_url")
-  coverUrl       String?                     @map("cover_url")
-  privacy        OrgPrivacy                  @default(DISCOVERABLE)
-  status         OrgStatus                   @default(ACTIVE)
-  createdAt      DateTime                    @default(now()) @map("created_at")
-  updatedAt      DateTime                    @updatedAt @map("updated_at")
+  id                        String                      @id @default(uuid())
+  name                      String
+  slug                      String                      @unique
+  type                      OrgType                     @default(COLLEGE)
+  description               String?
+  officialEmail             String                      @map("official_email")
+  contactPhone              String?                     @map("contact_phone")
+  country                   String?
+  state                     String?
+  city                      String?
+  website                   String?
+  logoUrl                   String?                     @map("logo_url")
+  coverUrl                  String?                     @map("cover_url")
+  privacy                   OrgPrivacy                  @default(DISCOVERABLE)
+  status                    OrgStatus                   @default(ACTIVE)
+  autoPublishOfficialMedia  Boolean                     @default(true) @map("auto_publish_official_media")
+  allowUserUploads          Boolean                     @default(true) @map("allow_user_uploads")
+  requireUserUploadApproval Boolean                     @default(true) @map("require_user_upload_approval")
+  allowUserVideoUploads     Boolean                     @default(true) @map("allow_user_video_uploads")
+  allowUserPhotoUploads     Boolean                     @default(true) @map("allow_user_photo_uploads")
+  autoPublishUserUploads    Boolean                     @default(false) @map("auto_publish_user_uploads")
+  maxUserFilesPerBatch      Int                         @default(50) @map("max_user_files_per_batch")
+  maxUserImageSize          BigInt                      @default(52428800) @map("max_user_image_size") // 50 MB
+  maxUserVideoSize          BigInt                      @default(1073741824) @map("max_user_video_size") // 1 GB
+  maxUserUploadsPerDay      Int                         @default(200) @map("max_user_uploads_per_day")
+  timezone                  String                      @default("UTC")
+  faceDiscoveryEnabled      Boolean                     @default(false) @map("face_discovery_enabled")
+  allowFaceDiscoveryForMinors Boolean                   @default(false) @map("allow_face_discovery_for_minors")
+  faceProfileRetentionDays  Int                         @default(365) @map("face_profile_retention_days")
+  temporaryFaceDataRetentionMinutes Int                 @default(60) @map("temp_face_retention_minutes")
+  facePrivacyPolicyUrl      String?                     @map("face_privacy_policy_url")
+  facePrivacyContactEmail   String?                     @map("face_privacy_contact_email")
+  faceConsentVersion        String                      @default("v1") @map("face_consent_version")
+  allowOriginalDownloads    Boolean                     @default(false) @map("allow_original_downloads")
+  allowVideoDownloads       Boolean                     @default(true) @map("allow_video_downloads")
+  allowPhotoDownloads       Boolean                     @default(true) @map("allow_photo_downloads")
+  allowBulkDownloads        Boolean                     @default(true) @map("allow_bulk_downloads")
+  createdAt                 DateTime                    @default(now()) @map("created_at")
+  updatedAt                 DateTime                    @updatedAt @map("updated_at")
 
-  members        OrganisationMember[]
-  accessSettings OrganisationAccessSettings?
-  auditLogs      AuditLog[]
+  members                   OrganisationMember[]
+  accessSettings            OrganisationAccessSettings?
+  quota                     OrganisationQuota?
+  auditLogs                 AuditLog[]
+  events                    Event[]
+  albums                    Album[]
+  mediaItems                MediaItem[]
+  uploadSessions            UploadSession[]
+  uploadBatches             UploadBatch[]
+  moderationActions         MediaModerationAction[]
+  notifications             Notification[]
+  faceConsents              FaceDiscoveryConsent[]
+  faceProfiles              FaceProfile[]
+  mediaFaceEmbeddings       MediaFaceEmbedding[]
+  faceJobs                  FaceProcessingJob[]
+  exportJobs                MediaExportJob[]
 
   @@index([slug])
   @@index([status])
   @@index([privacy])
   @@index([city])
   @@map("organisations")
+}
+
+model OrganisationQuota {
+  id                    String       @id @default(uuid())
+  organisationId        String       @unique @map("organisation_id")
+  storageLimitBytes     BigInt       @default(53687091200) @map("storage_limit_bytes") // Default 50 GB
+  storageUsedBytes      BigInt       @default(0) @map("storage_used_bytes")
+  storageReservedBytes  BigInt       @default(0) @map("storage_reserved_bytes") // Concurrency-safe in-flight upload reservation
+  maxConcurrentUploads  Int          @default(20) @map("max_concurrent_uploads")
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+
+  organisation          Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@map("organisation_quotas")
 }
 
 model OrganisationMember {
@@ -159,6 +379,276 @@ model OrganisationAccessSettings {
   @@map("organisation_access_settings")
 }
 
+model Event {
+  id                String          @id @default(uuid())
+  organisationId    String          @map("organisation_id")
+  name              String
+  slug              String
+  description       String?
+  category          EventCategory   @default(OTHER)
+  eventDate         DateTime        @map("event_date")
+  startDate         DateTime?       @map("start_date")
+  endDate           DateTime?       @map("end_date")
+  startTime         String?         @map("start_time")
+  endTime           String?         @map("end_time")
+  location          String?
+  coverMediaId      String?         @map("cover_media_id")
+  status            EventStatus     @default(DRAFT)
+  visibility        EventVisibility @default(ORGANISATION)
+  isFeatured        Boolean         @default(false) @map("is_featured")
+  allowUserUploads          Boolean         @default(false) @map("allow_user_uploads")
+  allowDownloads            Boolean         @default(true) @map("allow_downloads")
+  allowOriginalDownloads    Boolean         @default(false) @map("allow_original_downloads")
+  allowBulkDownloads        Boolean         @default(true) @map("allow_bulk_downloads")
+  faceSearchEnabled         Boolean         @default(false) @map("face_search_enabled")
+  createdBy                 String          @map("created_by")
+  createdAt                 DateTime        @default(now()) @map("created_at")
+  updatedAt                 DateTime        @updatedAt @map("updated_at")
+  archivedAt                DateTime?       @map("archived_at")
+
+  organisation              Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  creator                   User            @relation("EventCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  albums                    Album[]
+  mediaItems                MediaItem[]
+  uploadSessions            UploadSession[]
+  uploadBatches             UploadBatch[]
+  mediaFaceEmbeddings       MediaFaceEmbedding[]
+  exportJobs                MediaExportJob[]
+
+  @@unique([organisationId, slug], name: "unique_org_event_slug")
+  @@index([organisationId])
+  @@index([organisationId, eventDate])
+  @@index([organisationId, status])
+  @@index([organisationId, visibility])
+  @@index([organisationId, category])
+  @@index([organisationId, isFeatured])
+  @@index([organisationId, archivedAt])
+  @@index([organisationId, status, eventDate])
+  @@index([organisationId, createdAt])
+  @@map("events")
+}
+
+model Album {
+  id             String          @id @default(uuid())
+  organisationId String          @map("organisation_id")
+  eventId        String          @map("event_id")
+  name           String
+  slug           String
+  description    String?
+  coverMediaId   String?         @map("cover_media_id")
+  sortOrder      Int             @default(0) @map("sort_order")
+  status         AlbumStatus     @default(PUBLISHED)
+  visibility     EventVisibility @default(ORGANISATION)
+  createdBy      String          @map("created_by")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  archivedAt     DateTime?       @map("archived_at")
+
+  organisation   Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  event          Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  creator        User            @relation("AlbumCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  mediaItems     MediaItem[]
+  uploadSessions UploadSession[]
+  uploadBatches  UploadBatch[]
+  exportJobs     MediaExportJob[]
+
+  @@unique([eventId, slug], name: "unique_event_album_slug")
+  @@index([organisationId])
+  @@index([eventId])
+  @@index([eventId, sortOrder])
+  @@index([organisationId, eventId, status])
+  @@index([organisationId, eventId, sortOrder])
+  @@index([eventId, createdAt])
+  @@map("albums")
+}
+
+model MediaItem {
+  id                 String            @id @default(uuid())
+  organisationId     String            @map("organisation_id")
+  eventId            String            @map("event_id")
+  albumId            String?           @map("album_id")
+  uploaderId         String            @map("uploader_id")
+  uploadType         UploadType        @default(OFFICIAL) @map("upload_type")
+  mediaType          MediaType         @map("media_type")
+  status             MediaStatus       @default(UPLOADING)
+  visibility         MediaVisibility   @default(ORGANISATION)
+  requestedVisibility MediaVisibility  @default(ORGANISATION) @map("requested_visibility")
+  approvalStatus     ApprovalStatus    @default(NOT_REQUIRED) @map("approval_status")
+  approvedBy         String?           @map("approved_by")
+  approvedAt         DateTime?         @map("approved_at")
+  rejectedBy         String?           @map("rejected_by")
+  rejectedAt         DateTime?         @map("rejected_at")
+  rejectionReason    String?           @map("rejection_reason")
+  rejectionCode      RejectionReason?  @map("rejection_code")
+  isPublished        Boolean           @default(true) @map("is_published")
+  publishedAt        DateTime?         @map("published_at")
+  faceSearchEnabled  Boolean           @default(false) @map("face_search_enabled")
+  faceSearchRequested Boolean          @default(false) @map("face_search_requested")
+  originalStorageKey String?           @map("original_storage_key")
+  originalFileName   String            @map("original_file_name")
+  mimeType           String            @map("mime_type")
+  fileSize           BigInt            @map("file_size")
+  width              Int?
+  height             Int?
+  durationMs         Int?              @map("duration_ms")
+  frameRate          Float?            @map("frame_rate")
+  codec              String?
+  checksum           String?
+  processingProgress Int               @default(0) @map("processing_progress")
+  processingError    String?           @map("processing_error")
+  processingVersion  Int               @default(1) @map("processing_version")
+  processingStartedAt DateTime?        @map("processing_started_at")
+  processingCompletedAt DateTime?      @map("processing_completed_at")
+  originalFileSize   BigInt?           @map("original_file_size")
+  optimizedFileSize  BigInt?           @map("optimized_file_size")
+  compressionRatio   Float?            @map("compression_ratio")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  organisation       Organisation      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  event              Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  album              Album?            @relation(fields: [albumId], references: [id], onDelete: SetNull)
+  uploader           User              @relation("MediaUploader", fields: [uploaderId], references: [id], onDelete: Restrict)
+  variants           MediaVariant[]
+  uploadSessions     UploadSession[]
+  batchItems         UploadBatchItem[]
+  moderationActions  MediaModerationAction[]
+  faceEmbeddings     MediaFaceEmbedding[]
+
+  @@index([organisationId])
+  @@index([eventId])
+  @@index([albumId])
+  @@index([uploaderId])
+  @@index([uploaderId, approvalStatus])
+  @@index([organisationId, approvalStatus, createdAt])
+  @@index([status])
+  @@index([approvalStatus])
+  @@index([isPublished])
+  @@index([eventId, isPublished, createdAt])
+  @@index([albumId, isPublished, createdAt])
+  @@index([eventId, mediaType, isPublished, createdAt])
+  @@index([albumId, mediaType, isPublished, createdAt])
+  @@index([organisationId, isPublished, createdAt])
+  @@index([organisationId, checksum])
+  @@index([eventId, approvalStatus, isPublished])
+  @@map("media_items")
+}
+
+model MediaVariant {
+  id          String      @id @default(uuid())
+  mediaItemId String      @map("media_item_id")
+  variantType VariantType @map("variant_type")
+  storageKey  String      @map("storage_key")
+  mimeType    String      @map("mime_type")
+  fileSize    BigInt      @map("file_size")
+  width       Int?
+  height      Int?
+  bitrate     Int?
+  durationMs  Int?        @map("duration_ms")
+  codec       String?
+  status      MediaStatus @default(READY)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  mediaItem   MediaItem   @relation(fields: [mediaItemId], references: [id], onDelete: Cascade)
+
+  @@index([mediaItemId])
+  @@index([mediaItemId, variantType])
+  @@map("media_variants")
+}
+
+model UploadSession {
+  id             String            @id @default(uuid())
+  organisationId String            @map("organisation_id")
+  eventId        String            @map("event_id")
+  albumId        String?           @map("album_id")
+  mediaItemId    String            @map("media_item_id")
+  userId         String            @map("user_id")
+  uploadType     UploadType        @default(OFFICIAL) @map("upload_type")
+  fileName       String            @map("file_name")
+  mimeType       String            @map("mime_type")
+  fileSize       BigInt            @map("file_size")
+  storageKey     String            @map("storage_key")
+  uploadId       String?           @map("upload_id") // S3 multipart upload ID
+  partsCount     Int?              @map("parts_count")
+  isMultipart    Boolean           @default(false) @map("is_multipart")
+  status         UploadStatus      @default(CREATED)
+  expiresAt      DateTime          @map("expires_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  organisation   Organisation      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  event          Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  album          Album?            @relation(fields: [albumId], references: [id], onDelete: SetNull)
+  mediaItem      MediaItem         @relation(fields: [mediaItemId], references: [id], onDelete: Cascade)
+  user           User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  batchItems     UploadBatchItem[]
+
+  @@index([organisationId])
+  @@index([eventId])
+  @@index([mediaItemId])
+  @@index([userId])
+  @@index([status, expiresAt])
+  @@map("upload_sessions")
+}
+
+model UploadBatch {
+  id             String            @id @default(uuid())
+  organisationId String            @map("organisation_id")
+  eventId        String            @map("event_id")
+  albumId        String?           @map("album_id")
+  createdBy      String            @map("created_by")
+  uploadType     UploadType        @default(OFFICIAL) @map("upload_type")
+  status         UploadBatchStatus @default(CREATED)
+  totalFiles     Int               @default(0) @map("total_files")
+  completedFiles Int               @default(0) @map("completed_files")
+  failedFiles    Int               @default(0) @map("failed_files")
+  cancelledFiles Int               @default(0) @map("cancelled_files")
+  totalBytes     BigInt            @default(0) @map("total_bytes")
+  uploadedBytes  BigInt            @default(0) @map("uploaded_bytes")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  completedAt    DateTime?         @map("completed_at")
+
+  organisation   Organisation      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  event          Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  album          Album?            @relation(fields: [albumId], references: [id], onDelete: SetNull)
+  creator        User              @relation("BatchCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  items          UploadBatchItem[]
+
+  @@index([organisationId])
+  @@index([eventId])
+  @@index([createdBy])
+  @@index([status])
+  @@index([organisationId, createdAt])
+  @@map("upload_batches")
+}
+
+model UploadBatchItem {
+  id              String                @id @default(uuid())
+  batchId         String                @map("batch_id")
+  mediaItemId     String?               @map("media_item_id")
+  uploadSessionId String?               @map("upload_session_id")
+  fileName        String                @map("file_name")
+  fileSize        BigInt                @map("file_size")
+  mimeType        String                @map("mime_type")
+  checksum        String?
+  status          UploadBatchItemStatus @default(PENDING)
+  errorCode       String?               @map("error_code")
+  errorMessage    String?               @map("error_message")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+
+  batch           UploadBatch           @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  mediaItem       MediaItem?            @relation(fields: [mediaItemId], references: [id], onDelete: SetNull)
+  uploadSession   UploadSession?        @relation(fields: [uploadSessionId], references: [id], onDelete: SetNull)
+
+  @@index([batchId])
+  @@index([batchId, status])
+  @@index([mediaItemId])
+  @@map("upload_batch_items")
+}
+
 model AuditLog {
   id             String        @id @default(uuid())
   organisationId String?       @map("organisation_id")
@@ -179,3 +669,204 @@ model AuditLog {
   @@index([resourceType, resourceId])
   @@map("audit_logs")
 }
+
+enum RejectionReason {
+  INAPPROPRIATE_CONTENT
+  DUPLICATE
+  WRONG_EVENT
+  LOW_QUALITY
+  PRIVACY_CONCERN
+  UNRELATED_CONTENT
+  UNSUPPORTED_CONTENT
+  OTHER
+}
+
+enum ModerationActionType {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  RESUBMITTED
+  PUBLISHED
+  UNPUBLISHED
+  DELETE_REQUESTED
+}
+
+model MediaModerationAction {
+  id             String               @id @default(uuid())
+  mediaItemId    String               @map("media_item_id")
+  organisationId String               @map("organisation_id")
+  actorUserId    String               @map("actor_user_id")
+  action         ModerationActionType
+  reasonCode     RejectionReason?     @map("reason_code")
+  note           String?
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  mediaItem      MediaItem            @relation(fields: [mediaItemId], references: [id], onDelete: Cascade)
+  actorUser      User                 @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  organisation   Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([mediaItemId])
+  @@index([organisationId, createdAt])
+  @@index([actorUserId])
+  @@map("media_moderation_actions")
+}
+
+enum NotificationType {
+  MEDIA_UPLOAD_RECEIVED
+  MEDIA_APPROVED
+  MEDIA_REJECTED
+  MEDIA_PUBLISHED
+  MEDIA_UNPUBLISHED
+}
+
+model Notification {
+  id             String           @id @default(uuid())
+  userId         String           @map("user_id")
+  organisationId String?          @map("organisation_id")
+  type           NotificationType
+  title          String
+  message        String
+  resourceType   String?          @map("resource_type")
+  resourceId     String?          @map("resource_id")
+  readAt         DateTime?        @map("read_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation   Organisation?    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model FaceDiscoveryConsent {
+  id              String        @id @default(uuid())
+  userId          String        @map("user_id")
+  organisationId  String        @map("organisation_id")
+  purpose         String        @default("PHOTO_DISCOVERY")
+  status          ConsentStatus @default(ACTIVE)
+  consentVersion  String        @default("v1") @map("consent_version")
+  consentedAt     DateTime      @default(now()) @map("consented_at")
+  withdrawnAt     DateTime?     @map("withdrawn_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation    Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  faceProfiles    FaceProfile[]
+
+  @@index([userId, organisationId])
+  @@index([organisationId, status])
+  @@map("face_discovery_consents")
+}
+
+model FaceProfile {
+  id              String            @id @default(uuid())
+  userId          String            @map("user_id")
+  organisationId  String            @map("organisation_id")
+  consentId       String            @map("consent_id")
+  status          FaceProfileStatus @default(NOT_CREATED)
+  modelVersion    String            @default("face-model-v1") @map("model_version")
+  profileVersion  Int               @default(1) @map("profile_version")
+  embeddingJson   String?           @map("embedding_json")
+  failureReason   String?           @map("failure_reason")
+  qualityScore    Float?            @map("quality_score")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation    Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  consent         FaceDiscoveryConsent @relation(fields: [consentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organisationId, profileVersion], name: "unique_user_org_profile_version")
+  @@index([userId, organisationId, status])
+  @@index([organisationId, status])
+  @@map("face_profiles")
+}
+
+model MediaFaceEmbedding {
+  id              String       @id @default(uuid())
+  organisationId  String       @map("organisation_id")
+  eventId         String       @map("event_id")
+  mediaItemId     String       @map("media_item_id")
+  modelVersion    String       @default("face-model-v1") @map("model_version")
+  embeddingJson   String       @map("embedding_json")
+  confidence      Float        @default(1.0)
+  boundingBoxJson String?      @map("bounding_box_json")
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  organisation    Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  event           Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  mediaItem       MediaItem    @relation(fields: [mediaItemId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, eventId])
+  @@index([mediaItemId])
+  @@index([organisationId, modelVersion])
+  @@map("media_face_embeddings")
+}
+
+model FaceProcessingJob {
+  id              String           @id @default(uuid())
+  organisationId  String           @map("organisation_id")
+  jobType         FaceJobType      @map("job_type")
+  resourceId      String           @map("resource_id")
+  status          FaceJobStatus    @default(PENDING)
+  failureType     FaceFailureType? @map("failure_type")
+  attempts        Int              @default(0)
+  maxAttempts     Int              @default(3) @map("max_attempts")
+  errorMessage    String?          @map("error_message")
+  startedAt       DateTime?        @map("started_at")
+  completedAt     DateTime?        @map("completed_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  organisation    Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, status])
+  @@index([jobType, status])
+  @@map("face_processing_jobs")
+}
+
+model MediaExportJob {
+  id                String        @id @default(uuid())
+  organisationId    String        @map("organisation_id")
+  userId            String        @map("user_id")
+  scopeType         ExportScope   @default(ALBUM) @map("scope_type")
+  eventId           String?       @map("event_id")
+  albumId           String?       @map("album_id")
+  status            ExportStatus  @default(QUEUED)
+  requestedVariant  String        @default("OPTIMIZED") @map("requested_variant")
+  fileCount         Int           @default(0) @map("file_count")
+  totalBytes        BigInt        @default(0) @map("total_bytes")
+  processedFiles    Int           @default(0) @map("processed_files")
+  processedBytes    BigInt        @default(0) @map("processed_bytes")
+  skippedFiles      Int           @default(0) @map("skipped_files")
+  progress          Int           @default(0)
+  archiveStorageKey String?       @map("archive_storage_key")
+  archiveSize       BigInt?       @map("archive_size")
+  manifestJson      String?       @map("manifest_json")
+  errorMessage      String?       @map("error_message")
+  errorCode         String?       @map("error_code")
+  expiresAt         DateTime?     @map("expires_at")
+  startedAt         DateTime?     @map("started_at")
+  completedAt       DateTime?     @map("completed_at")
+  failedAt          DateTime?     @map("failed_at")
+  cancelledAt       DateTime?     @map("cancelled_at")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  organisation      Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event             Event?        @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  album             Album?        @relation(fields: [albumId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId])
+  @@index([userId])
+  @@index([organisationId, userId, createdAt])
+  @@index([status, expiresAt])
+  @@index([organisationId, status])
+  @@map("media_export_jobs")
+}
+
+

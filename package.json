@@ -13,17 +13,26 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:validate": "prisma validate",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "node --loader ts-node/esm prisma/seed.ts"
+    "prisma:seed": "node --loader ts-node/esm prisma/seed.ts",
+    "worker": "tsx src/workers/index.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1111.0",
+    "@aws-sdk/s3-request-presigner": "^3.1111.0",
     "@node-rs/argon2": "^2.0.2",
+    "@opentelemetry/api": "^1.9.1",
     "@prisma/client": "^5.21.1",
+    "bullmq": "^6.1.1",
     "clsx": "^2.1.1",
+    "firebase": "^12.17.1",
+    "firebase-admin": "^14.2.0",
+    "ioredis": "^6.0.0",
     "jose": "^5.9.6",
     "lucide-react": "^0.453.0",
     "next": "^14.2.15",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "sharp": "^0.35.3",
     "tailwind-merge": "^2.5.4",
     "zod": "^3.23.8"
   },
@@ -35,6 +44,7 @@
     "postcss": "^8.4.47",
     "prisma": "^5.21.1",
     "tailwindcss": "^3.4.14",
+    "tsx": "^4.23.12",
     "typescript": "^5.6.3",
     "vitest": "^2.1.3"
   }

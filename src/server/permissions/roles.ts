@@ -9,6 +9,7 @@ export const ROLES = {
 } as const;
 
 export type RoleType = (typeof ROLES)[keyof typeof ROLES];
+export type Role = RoleType;
 
 /**
  * Numeric role hierarchy weights for permission elevation comparisons.

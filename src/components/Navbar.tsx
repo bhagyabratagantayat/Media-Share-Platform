@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Shield, Building2, PlusCircle, User, LogOut, LogIn } from 'lucide-react';
+import NotificationBell from '@/components/notifications/NotificationBell';
+import OrganisationSwitcher from '@/components/OrganisationSwitcher';
 
 interface AuthUser {
   id: string;
@@ -64,11 +66,14 @@ export default function Navbar() {
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-300 hover:text-white rounded-lg hover:bg-slate-900 transition-all"
           >
             <Building2 className="w-4 h-4 text-cyan-400" />
-            <span>Organisations</span>
+            <span className="hidden sm:inline">Organisations</span>
           </Link>
+
+          {!loading && user && <OrganisationSwitcher />}
 
           {!loading && user ? (
             <>
+              <NotificationBell />
               <Link
                 href="/organisations/new"
                 className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-300 hover:text-white rounded-lg hover:bg-slate-900 transition-all"

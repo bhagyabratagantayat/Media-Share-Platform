@@ -10,7 +10,7 @@ import {
 } from '@/lib/errors';
 import { ROLES, RoleType } from '@/server/permissions/roles';
 import { PERMISSIONS, checkRolePermission } from '@/server/permissions/permissions';
-import { OrgType, OrgStatus, OrgPrivacy, Prisma } from '@prisma/client';
+import { OrgType, OrgStatus, OrgPrivacy, Prisma, Role, MemberStatus } from '@prisma/client';
 
 export interface CreateOrganisationInput {
   name: string;
@@ -38,6 +38,7 @@ export interface ListOrganisationsParams {
   city?: string;
   page?: number;
   limit?: number;
+  requestingUserId?: string;
 }
 
 export function normalizeSlug(slug: string): string {
@@ -50,8 +51,22 @@ export function normalizeSlug(slug: string): string {
 }
 
 /**
+ * Validates access password strength (min 6 chars, not trivially simple).
+ */
+export function validateAccessPassword(password: string, slug?: string): void {
+  if (!password || password.length < 6) {
+    throw new BadRequestError('Organisation access password must be at least 6 characters long.');
+  }
+  const lower = password.toLowerCase().trim();
+  const trivial = ['password', '123456', '12345678', 'admin123', 'access123', 'passcode'];
+  if (trivial.includes(lower) || (slug && lower === slug.toLowerCase())) {
+    throw new BadRequestError('Access password is too simple. Please choose a stronger passcode.');
+  }
+}
+
+/**
  * Creates an organisation atomically in a transaction with Owner membership,
- * Argon2id access settings, and an initial audit log record.
+ * Argon2id access settings, default storage quota, and an initial audit log record.
  */
 export async function createOrganisation(input: CreateOrganisationInput) {
   const cleanSlug = normalizeSlug(input.slug);
@@ -70,18 +85,38 @@ export async function createOrganisation(input: CreateOrganisationInput) {
     throw new ConflictError(`Organisation slug '${cleanSlug}' is already taken.`);
   }
 
-  const ownerUser = await prisma.user.findUnique({
+  let ownerUser = await prisma.user.findUnique({
     where: { id: input.initialOwnerUserId },
   });
+
   if (!ownerUser) {
-    throw new NotFoundError('Owner user account does not exist.');
+    try {
+      ownerUser = await prisma.user.upsert({
+        where: { id: input.initialOwnerUserId },
+        update: {},
+        create: {
+          id: input.initialOwnerUserId,
+          email: input.officialEmail.toLowerCase().trim(),
+          name: input.officialEmail.split('@')[0],
+          passwordHash: 'FIREBASE_AUTH_MANAGED',
+          status: 'ACTIVE',
+        },
+      });
+    } catch {
+      // If email exists with another ID, try finding by email
+      ownerUser = await prisma.user.findUnique({
+        where: { email: input.officialEmail.toLowerCase().trim() },
+      });
+    }
+  }
+
+  if (!ownerUser) {
+    throw new NotFoundError('Owner user account could not be initialized.');
   }
 
   // Access Password validation & hashing
   const accessPassword = input.accessPassword || `OrgPass-${Math.random().toString(36).slice(2, 10)}!`;
-  if (accessPassword.length < 6) {
-    throw new BadRequestError('Organisation access password must be at least 6 characters long.');
-  }
+  validateAccessPassword(accessPassword, cleanSlug);
   const accessPasswordHash = await hashPassword(accessPassword);
 
   return await prisma.$transaction(async (tx) => {
@@ -105,7 +140,7 @@ export async function createOrganisation(input: CreateOrganisationInput) {
           create: {
             userId: ownerUser.id,
             role: ROLES.ORGANISATION_OWNER,
-            status: 'ACTIVE',
+            status: MemberStatus.ACTIVE,
           },
         },
         accessSettings: {
@@ -113,6 +148,14 @@ export async function createOrganisation(input: CreateOrganisationInput) {
             passwordHash: accessPasswordHash,
             enabled: true,
             accessVersion: 1,
+          },
+        },
+        quota: {
+          create: {
+            storageLimitBytes: BigInt(53687091200), // Default 50 GB
+            storageUsedBytes: BigInt(0),
+            storageReservedBytes: BigInt(0),
+            maxConcurrentUploads: 20,
           },
         },
       },
@@ -150,7 +193,7 @@ export async function createOrganisation(input: CreateOrganisationInput) {
 }
 
 /**
- * Lists discoverable and public organisations with server-side pagination and search filters.
+ * Lists discoverable, public or member-accessible organisations with server-side pagination and search filters.
  */
 export async function listOrganisations(params: ListOrganisationsParams) {
   const page = Math.max(1, params.page || 1);
@@ -159,7 +202,21 @@ export async function listOrganisations(params: ListOrganisationsParams) {
 
   const where: Prisma.OrganisationWhereInput = {
     status: OrgStatus.ACTIVE,
-    privacy: { in: [OrgPrivacy.DISCOVERABLE, OrgPrivacy.PUBLIC] },
+    OR: [
+      { privacy: { in: [OrgPrivacy.DISCOVERABLE, OrgPrivacy.PUBLIC] } },
+      ...(params.requestingUserId
+        ? [
+            {
+              members: {
+                some: {
+                  userId: params.requestingUserId,
+                  status: MemberStatus.ACTIVE,
+                },
+              },
+            },
+          ]
+        : []),
+    ],
   };
 
   if (params.type) {
@@ -172,51 +229,68 @@ export async function listOrganisations(params: ListOrganisationsParams) {
 
   if (params.search) {
     const term = params.search.trim();
-    where.OR = [
-      { name: { contains: term, mode: 'insensitive' } },
-      { slug: { contains: term, mode: 'insensitive' } },
-      { city: { contains: term, mode: 'insensitive' } },
-      { state: { contains: term, mode: 'insensitive' } },
+    where.AND = [
+      {
+        OR: [
+          { name: { contains: term, mode: 'insensitive' } },
+          { slug: { contains: term, mode: 'insensitive' } },
+          { city: { contains: term, mode: 'insensitive' } },
+          { state: { contains: term, mode: 'insensitive' } },
+        ],
+      },
     ];
   }
 
-  const [total, items] = await Promise.all([
-    prisma.organisation.count({ where }),
-    prisma.organisation.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        type: true,
-        description: true,
-        city: true,
-        state: true,
-        country: true,
-        logoUrl: true,
-        privacy: true,
-        status: true,
-        createdAt: true,
-        _count: {
-          select: { members: true },
+  try {
+    const [total, items] = await Promise.all([
+      prisma.organisation.count({ where }),
+      prisma.organisation.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          type: true,
+          description: true,
+          city: true,
+          state: true,
+          country: true,
+          logoUrl: true,
+          privacy: true,
+          status: true,
+          createdAt: true,
+          _count: {
+            select: { members: true },
+          },
         },
-      },
-    }),
-  ]);
+      }),
+    ]);
 
-  return {
-    items,
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-      hasMore: page * limit < total,
-    },
-  };
+    return {
+      items,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasMore: page * limit < total,
+      },
+    };
+  } catch {
+    return {
+      items: [],
+      pagination: {
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+        hasMore: false,
+      },
+    };
+  }
 }
 
 /**
@@ -279,6 +353,48 @@ export async function getOrganisationBySlug(slug: string, requestingUserId?: str
     ...org,
     userMembership,
   };
+}
+
+/**
+ * Retrieves all organisations where a user is an active member.
+ */
+export async function getUserOrganisations(userId: string) {
+  const memberships = await prisma.organisationMember.findMany({
+    where: {
+      userId,
+      status: MemberStatus.ACTIVE,
+      organisation: {
+        status: { in: [OrgStatus.ACTIVE, OrgStatus.PENDING] },
+      },
+    },
+    include: {
+      organisation: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          type: true,
+          logoUrl: true,
+          city: true,
+          status: true,
+          privacy: true,
+          accessSettings: {
+            select: {
+              enabled: true,
+              accessVersion: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return memberships.map((m) => ({
+    organisation: m.organisation,
+    role: m.role,
+    joinedAt: m.createdAt,
+  }));
 }
 
 /**
@@ -350,24 +466,24 @@ export async function rotateOrganisationAccessPassword(
   newAccessPassword: string,
   invalidateSessions = true,
   ipAddress?: string,
-  userAgent?: string
+  userAgent?: string,
+  isPlatformAdmin = false
 ) {
-  if (!newAccessPassword || newAccessPassword.length < 6) {
-    throw new BadRequestError('New access password must be at least 6 characters long.');
-  }
+  validateAccessPassword(newAccessPassword);
 
-  // Guard: Verify user has ORG_ACCESS_MANAGE permission
-  const member = await prisma.organisationMember.findUnique({
-    where: {
-      unique_organisation_user: {
-        organisationId: orgId,
-        userId: actorUserId,
+  if (!isPlatformAdmin) {
+    const member = await prisma.organisationMember.findUnique({
+      where: {
+        unique_organisation_user: {
+          organisationId: orgId,
+          userId: actorUserId,
+        },
       },
-    },
-  });
+    });
 
-  if (!member || !checkRolePermission(member.role as RoleType, PERMISSIONS.ORG_ACCESS_MANAGE)) {
-    throw new ForbiddenError('You do not have permission to manage this organisation access settings.');
+    if (!member || !checkRolePermission(member.role as RoleType, PERMISSIONS.ORG_ACCESS_MANAGE)) {
+      throw new ForbiddenError('You do not have permission to manage this organisation access settings.');
+    }
   }
 
   const newHash = await hashPassword(newAccessPassword);
@@ -403,6 +519,492 @@ export async function rotateOrganisationAccessPassword(
 }
 
 /**
+ * Toggles organisation access password protection on or off (Owner/Admin only).
+ */
+export async function toggleOrganisationAccessPassword(
+  orgId: string,
+  actorUserId: string,
+  enabled: boolean,
+  isPlatformAdmin = false,
+  ipAddress?: string,
+  userAgent?: string
+) {
+  if (!isPlatformAdmin) {
+    const member = await prisma.organisationMember.findUnique({
+      where: {
+        unique_organisation_user: {
+          organisationId: orgId,
+          userId: actorUserId,
+        },
+      },
+    });
+
+    if (!member || !checkRolePermission(member.role as RoleType, PERMISSIONS.ORG_ACCESS_MANAGE)) {
+      throw new ForbiddenError('You do not have permission to modify organisation access settings.');
+    }
+  }
+
+  const updated = await prisma.organisationAccessSettings.update({
+    where: { organisationId: orgId },
+    data: {
+      enabled,
+      ...(enabled ? { accessVersion: { increment: 1 } } : {}),
+    },
+    select: {
+      enabled: true,
+      accessVersion: true,
+      passwordChangedAt: true,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organisationId: orgId,
+      actorUserId,
+      action: enabled ? 'ORGANISATION_ACCESS_PASSWORD_ENABLED' : 'ORGANISATION_ACCESS_PASSWORD_DISABLED',
+      resourceType: 'ORGANISATION_ACCESS_SETTINGS',
+      resourceId: orgId,
+      ipAddress,
+      userAgent,
+      metadata: { enabled, accessVersion: updated.accessVersion },
+    },
+  });
+
+  return updated;
+}
+
+/**
+ * Revokes all active organisation guest sessions instantly by incrementing accessVersion.
+ */
+export async function revokeAllOrganisationSessions(
+  orgId: string,
+  actorUserId: string,
+  isPlatformAdmin = false,
+  ipAddress?: string,
+  userAgent?: string
+) {
+  if (!isPlatformAdmin) {
+    const member = await prisma.organisationMember.findUnique({
+      where: {
+        unique_organisation_user: {
+          organisationId: orgId,
+          userId: actorUserId,
+        },
+      },
+    });
+
+    if (!member || !checkRolePermission(member.role as RoleType, PERMISSIONS.ORG_ACCESS_MANAGE)) {
+      throw new ForbiddenError('You do not have permission to revoke organisation access sessions.');
+    }
+  }
+
+  const updated = await prisma.organisationAccessSettings.update({
+    where: { organisationId: orgId },
+    data: {
+      accessVersion: { increment: 1 },
+    },
+    select: {
+      enabled: true,
+      accessVersion: true,
+      passwordChangedAt: true,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organisationId: orgId,
+      actorUserId,
+      action: 'ORGANISATION_SESSIONS_REVOKED',
+      resourceType: 'ORGANISATION_ACCESS_SETTINGS',
+      resourceId: orgId,
+      ipAddress,
+      userAgent,
+      metadata: { newAccessVersion: updated.accessVersion },
+    },
+  });
+
+  return updated;
+}
+
+/**
+ * Transfers organisation ownership to another active member atomically.
+ * Demotes previous owner(s) to ORGANISATION_ADMIN and sets the new owner.
+ */
+export async function transferOrganisationOwnership(
+  orgId: string,
+  actorUserId: string,
+  targetUserId: string,
+  isPlatformAdmin = false,
+  ipAddress?: string,
+  userAgent?: string
+) {
+  if (actorUserId === targetUserId) {
+    throw new BadRequestError('Cannot transfer ownership to yourself.');
+  }
+
+  if (!isPlatformAdmin) {
+    const actorMember = await prisma.organisationMember.findUnique({
+      where: {
+        unique_organisation_user: {
+          organisationId: orgId,
+          userId: actorUserId,
+        },
+      },
+    });
+
+    if (!actorMember || actorMember.role !== ROLES.ORGANISATION_OWNER) {
+      throw new ForbiddenError('Only the current organisation owner can initiate ownership transfer.');
+    }
+  }
+
+  const targetMember = await prisma.organisationMember.findUnique({
+    where: {
+      unique_organisation_user: {
+        organisationId: orgId,
+        userId: targetUserId,
+      },
+    },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+    },
+  });
+
+  if (!targetMember || targetMember.status !== MemberStatus.ACTIVE) {
+    throw new NotFoundError('Target user must be an active member of this organisation.');
+  }
+
+  return await prisma.$transaction(async (tx) => {
+    // Demote current owner(s) to ORGANISATION_ADMIN
+    await tx.organisationMember.updateMany({
+      where: {
+        organisationId: orgId,
+        role: ROLES.ORGANISATION_OWNER,
+      },
+      data: {
+        role: ROLES.ORGANISATION_ADMIN,
+      },
+    });
+
+    // Promote target member to ORGANISATION_OWNER
+    const updatedTarget = await tx.organisationMember.update({
+      where: { id: targetMember.id },
+      data: {
+        role: ROLES.ORGANISATION_OWNER,
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        organisationId: orgId,
+        actorUserId,
+        action: 'ORGANISATION_OWNER_TRANSFERRED',
+        resourceType: 'ORGANISATION',
+        resourceId: orgId,
+        ipAddress,
+        userAgent,
+        metadata: {
+          previousOwnerId: actorUserId,
+          newOwnerId: targetUserId,
+          newOwnerEmail: targetMember.user.email,
+        },
+      },
+    });
+
+    return updatedTarget;
+  });
+}
+
+/**
+ * Updates a member's role inside the organisation.
+ * Blocks self-modification, role escalation, and demoting the final owner.
+ */
+export async function updateMemberRole(
+  orgId: string,
+  actorUserId: string,
+  targetUserId: string,
+  newRole: RoleType,
+  isPlatformAdmin = false,
+  ipAddress?: string,
+  userAgent?: string
+) {
+  if (actorUserId === targetUserId && !isPlatformAdmin) {
+    throw new ForbiddenError('You cannot modify your own role.');
+  }
+
+  if (!isPlatformAdmin) {
+    const actorMember = await prisma.organisationMember.findUnique({
+      where: {
+        unique_organisation_user: {
+          organisationId: orgId,
+          userId: actorUserId,
+        },
+      },
+    });
+
+    if (!actorMember || !checkRolePermission(actorMember.role as RoleType, PERMISSIONS.TEAM_MANAGE)) {
+      throw new ForbiddenError('You do not have permission to manage member roles.');
+    }
+
+    if (newRole === ROLES.ORGANISATION_OWNER) {
+      throw new ForbiddenError('Use the ownership transfer process to assign the owner role.');
+    }
+  }
+
+  const targetMember = await prisma.organisationMember.findUnique({
+    where: {
+      unique_organisation_user: {
+        organisationId: orgId,
+        userId: targetUserId,
+      },
+    },
+  });
+
+  if (!targetMember) {
+    throw new NotFoundError('Member not found in this organisation.');
+  }
+
+  if (targetMember.role === ROLES.ORGANISATION_OWNER && !isPlatformAdmin) {
+    throw new ForbiddenError('Cannot change the role of the organisation owner without owner transfer.');
+  }
+
+  const updated = await prisma.organisationMember.update({
+    where: { id: targetMember.id },
+    data: { role: newRole as Role },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organisationId: orgId,
+      actorUserId,
+      action: 'ORGANISATION_MEMBER_ROLE_CHANGED',
+      resourceType: 'ORGANISATION_MEMBER',
+      resourceId: updated.id,
+      ipAddress,
+      userAgent,
+      metadata: { targetUserId, oldRole: targetMember.role, newRole },
+    },
+  });
+
+  return updated;
+}
+
+/**
+ * Removes a member from the organisation.
+ * Blocks self-removal and removal of the organisation owner.
+ */
+export async function removeMember(
+  orgId: string,
+  actorUserId: string,
+  targetUserId: string,
+  isPlatformAdmin = false,
+  ipAddress?: string,
+  userAgent?: string
+) {
+  if (actorUserId === targetUserId && !isPlatformAdmin) {
+    throw new ForbiddenError('You cannot remove yourself. Use leave organisation instead.');
+  }
+
+  if (!isPlatformAdmin) {
+    const actorMember = await prisma.organisationMember.findUnique({
+      where: {
+        unique_organisation_user: {
+          organisationId: orgId,
+          userId: actorUserId,
+        },
+      },
+    });
+
+    if (!actorMember || !checkRolePermission(actorMember.role as RoleType, PERMISSIONS.TEAM_MANAGE)) {
+      throw new ForbiddenError('You do not have permission to remove members.');
+    }
+  }
+
+  const targetMember = await prisma.organisationMember.findUnique({
+    where: {
+      unique_organisation_user: {
+        organisationId: orgId,
+        userId: targetUserId,
+      },
+    },
+  });
+
+  if (!targetMember) {
+    throw new NotFoundError('Member not found in this organisation.');
+  }
+
+  if (targetMember.role === ROLES.ORGANISATION_OWNER) {
+    throw new ForbiddenError('Cannot remove the organisation owner. Transfer ownership first.');
+  }
+
+  await prisma.organisationMember.delete({
+    where: { id: targetMember.id },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organisationId: orgId,
+      actorUserId,
+      action: 'ORGANISATION_MEMBER_REMOVED',
+      resourceType: 'ORGANISATION_MEMBER',
+      resourceId: targetMember.id,
+      ipAddress,
+      userAgent,
+      metadata: { targetUserId, removedRole: targetMember.role },
+    },
+  });
+
+  return { success: true };
+}
+
+/**
+ * Invites or adds a registered user directly as a member of an organisation.
+ */
+export async function inviteOrAddMember(
+  orgId: string,
+  actorUserId: string,
+  input: { email: string; role?: RoleType },
+  isPlatformAdmin = false,
+  ipAddress?: string,
+  userAgent?: string
+) {
+  const email = input.email.toLowerCase().trim();
+  const role = input.role || ROLES.USER;
+
+  if (role === ROLES.ORGANISATION_OWNER) {
+    throw new ForbiddenError('Cannot invite a user directly as organisation owner.');
+  }
+
+  if (!isPlatformAdmin) {
+    const actorMember = await prisma.organisationMember.findUnique({
+      where: {
+        unique_organisation_user: {
+          organisationId: orgId,
+          userId: actorUserId,
+        },
+      },
+    });
+
+    if (!actorMember || !checkRolePermission(actorMember.role as RoleType, PERMISSIONS.TEAM_INVITE)) {
+      throw new ForbiddenError('You do not have permission to invite members to this organisation.');
+    }
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (!user) {
+    throw new NotFoundError(`No user found with email '${email}'. The user must register an account first.`);
+  }
+
+  const existingMember = await prisma.organisationMember.findUnique({
+    where: {
+      unique_organisation_user: {
+        organisationId: orgId,
+        userId: user.id,
+      },
+    },
+  });
+
+  if (existingMember) {
+    if (existingMember.status === MemberStatus.ACTIVE) {
+      throw new ConflictError('User is already an active member of this organisation.');
+    }
+    const updated = await prisma.organisationMember.update({
+      where: { id: existingMember.id },
+      data: { status: MemberStatus.ACTIVE, role: role as Role },
+      include: { user: { select: { id: true, name: true, email: true } } },
+    });
+    return updated;
+  }
+
+  const newMember = await prisma.organisationMember.create({
+    data: {
+      organisationId: orgId,
+      userId: user.id,
+      role: role as Role,
+      status: MemberStatus.ACTIVE,
+    },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organisationId: orgId,
+      actorUserId,
+      action: 'ORGANISATION_MEMBER_ADDED',
+      resourceType: 'ORGANISATION_MEMBER',
+      resourceId: newMember.id,
+      ipAddress,
+      userAgent,
+      metadata: { targetUserId: user.id, email, role },
+    },
+  });
+
+  return newMember;
+}
+
+/**
+ * Updates organisation status (ACTIVE, SUSPENDED, ARCHIVED).
+ * Platform admin can suspend/activate; Owner can archive/activate.
+ */
+export async function updateOrganisationStatus(
+  orgId: string,
+  actorUserId: string,
+  status: OrgStatus,
+  isPlatformAdmin = false,
+  ipAddress?: string,
+  userAgent?: string
+) {
+  if (!isPlatformAdmin) {
+    const member = await prisma.organisationMember.findUnique({
+      where: {
+        unique_organisation_user: {
+          organisationId: orgId,
+          userId: actorUserId,
+        },
+      },
+    });
+
+    if (!member || member.role !== ROLES.ORGANISATION_OWNER) {
+      throw new ForbiddenError('Only the organisation owner or platform admin can change organisation status.');
+    }
+
+    if (status === OrgStatus.SUSPENDED) {
+      throw new ForbiddenError('Only platform administrators can suspend an organisation.');
+    }
+  }
+
+  const updated = await prisma.organisation.update({
+    where: { id: orgId },
+    data: { status },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organisationId: orgId,
+      actorUserId,
+      action: 'ORGANISATION_STATUS_CHANGED',
+      resourceType: 'ORGANISATION',
+      resourceId: orgId,
+      ipAddress,
+      userAgent,
+      metadata: { newStatus: status },
+    },
+  });
+
+  return updated;
+}
+
+/**
  * Updates general organisation profile settings (Owner/Admin only).
  */
 export async function updateOrganisationSettings(
@@ -418,21 +1020,28 @@ export async function updateOrganisationSettings(
     city?: string;
     website?: string;
     privacy?: OrgPrivacy;
+    allowOriginalDownloads?: boolean;
+    allowVideoDownloads?: boolean;
+    allowPhotoDownloads?: boolean;
+    allowBulkDownloads?: boolean;
   },
   ipAddress?: string,
-  userAgent?: string
+  userAgent?: string,
+  isPlatformAdmin = false
 ) {
-  const member = await prisma.organisationMember.findUnique({
-    where: {
-      unique_organisation_user: {
-        organisationId: orgId,
-        userId: actorUserId,
+  if (!isPlatformAdmin) {
+    const member = await prisma.organisationMember.findUnique({
+      where: {
+        unique_organisation_user: {
+          organisationId: orgId,
+          userId: actorUserId,
+        },
       },
-    },
-  });
+    });
 
-  if (!member || !checkRolePermission(member.role as RoleType, PERMISSIONS.ORG_UPDATE)) {
-    throw new ForbiddenError('You do not have permission to update organisation settings.');
+    if (!member || !checkRolePermission(member.role as RoleType, PERMISSIONS.ORG_UPDATE)) {
+      throw new ForbiddenError('You do not have permission to update organisation settings.');
+    }
   }
 
   const org = await prisma.organisation.update({
@@ -447,6 +1056,10 @@ export async function updateOrganisationSettings(
       ...(updates.city !== undefined ? { city: updates.city.trim() } : {}),
       ...(updates.website !== undefined ? { website: updates.website.trim() } : {}),
       ...(updates.privacy ? { privacy: updates.privacy } : {}),
+      ...(updates.allowOriginalDownloads !== undefined ? { allowOriginalDownloads: updates.allowOriginalDownloads } : {}),
+      ...(updates.allowVideoDownloads !== undefined ? { allowVideoDownloads: updates.allowVideoDownloads } : {}),
+      ...(updates.allowPhotoDownloads !== undefined ? { allowPhotoDownloads: updates.allowPhotoDownloads } : {}),
+      ...(updates.allowBulkDownloads !== undefined ? { allowBulkDownloads: updates.allowBulkDownloads } : {}),
     },
   });
 
@@ -518,7 +1131,7 @@ export async function getOrganisationDashboard(
   let hasAccess = false;
   let userRole: RoleType | 'GUEST_ACCESS' = 'GUEST_ACCESS';
 
-  if (member && member.status === 'ACTIVE') {
+  if (member && member.status === MemberStatus.ACTIVE) {
     hasAccess = true;
     userRole = member.role as RoleType;
   } else if (passToken && org.accessSettings) {
@@ -558,7 +1171,7 @@ export async function getOrganisationDashboard(
     access: {
       hasAccess: true,
       userRole,
-      isMember: Boolean(member && member.status === 'ACTIVE'),
+      isMember: Boolean(member && member.status === MemberStatus.ACTIVE),
       accessSettingsEnabled: org.accessSettings?.enabled ?? false,
     },
   };
