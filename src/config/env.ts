@@ -46,7 +46,7 @@ const envSchema = z.object({
   STORAGE_PROVIDER: z.enum(['s3', 'mock', 'local', 'cloudinary']).default('cloudinary'),
   CLOUDINARY_CLOUD_NAME: z.string().optional().default(process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'bbty6ctr'),
   CLOUDINARY_API_KEY: z.string().optional().default('769223324249544'),
-  CLOUDINARY_API_SECRET: z.string().optional().default('oKk-BtSMAYh2ndLABZn_Fbyb4tg'),
+  CLOUDINARY_API_SECRET: z.string().optional().default('oKk-BtSMAYh2ndLAbZn_Fbyb4tg'),
   CLOUDINARY_URL: z.string().optional(),
   S3_ENDPOINT: z.string().optional(),
   S3_REGION: z.string().default('us-east-1'),

@@ -15,7 +15,7 @@ export class CloudinaryStorageProvider implements StorageProvider {
   constructor() {
     this.cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'bbty6ctr';
     this.apiKey = process.env.CLOUDINARY_API_KEY || '769223324249544';
-    this.apiSecret = process.env.CLOUDINARY_API_SECRET || 'oKk-BtSMAYh2ndLABZn_Fbyb4tg';
+    this.apiSecret = process.env.CLOUDINARY_API_SECRET || 'oKk-BtSMAYh2ndLAbZn_Fbyb4tg';
   }
 
   private sanitizePublicId(key: string): string {

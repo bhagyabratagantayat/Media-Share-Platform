@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       paramsToSign.public_id = public_id;
     }
 
-    const apiSecret = process.env.CLOUDINARY_API_SECRET || 'oKk-BtSMAYh2ndLABZn_Fbyb4tg';
+    const apiSecret = process.env.CLOUDINARY_API_SECRET || 'oKk-BtSMAYh2ndLAbZn_Fbyb4tg';
     const apiKey = process.env.CLOUDINARY_API_KEY || '769223324249544';
     const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'bbty6ctr';
 
