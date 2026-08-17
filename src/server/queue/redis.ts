@@ -17,10 +17,15 @@ export function getRedisOptions(): RedisOptions {
 export function createRedisConnection(): Redis {
   const client = new Redis(env.REDIS_URL, getRedisOptions());
 
+  let lastWarnTime = 0;
   client.on('error', (err) => {
-    // Only log if not in silent test mode
+    // Only log if not in silent test mode and debounce to avoid log flood
     if (process.env.NODE_ENV !== 'test') {
-      console.warn(`[Redis] Connection warning: ${err.message}`);
+      const now = Date.now();
+      if (now - lastWarnTime > 30000) {
+        lastWarnTime = now;
+        console.warn(`[Redis] Offline (Optional for local UI dev): ${err.message}`);
+      }
     }
   });
 
