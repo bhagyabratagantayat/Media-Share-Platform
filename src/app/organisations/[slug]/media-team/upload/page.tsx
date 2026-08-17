@@ -17,7 +17,8 @@ import {
   Film,
   Image as ImageIcon,
   StopCircle,
-  Eye,
+  PlusCircle,
+  Sparkles,
   Trash2,
 } from 'lucide-react';
 import { useBatchUploader } from '@/hooks/use-batch-uploader';
@@ -50,6 +51,11 @@ export default function BulkUploadPage() {
   const [clientErrors, setClientErrors] = useState<string[]>([]);
   const [uploadFinished, setUploadFinished] = useState(false);
 
+  // Quick event creation states
+  const [isCreatingQuickEvent, setIsCreatingQuickEvent] = useState(false);
+  const [quickEventName, setQuickEventName] = useState('Main Gallery 2026');
+  const [showQuickEventModal, setShowQuickEventModal] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -78,7 +84,7 @@ export default function BulkUploadPage() {
   });
 
   // Fetch organisation events
-  useEffect(() => {
+  const loadEvents = () => {
     if (!params.slug) return;
     setLoadingEvents(true);
     fetch(`/api/organisations/${params.slug}/events?limit=50`)
@@ -87,13 +93,55 @@ export default function BulkUploadPage() {
         if (data.success && data.data) {
           setEvents(data.data);
           if (data.data.length > 0) {
-            setSelectedEventId(data.data[0].id);
+            setSelectedEventId((prev) => prev || data.data[0].id);
           }
         }
       })
       .catch(() => {})
       .finally(() => setLoadingEvents(false));
+  };
+
+  useEffect(() => {
+    loadEvents();
   }, [params.slug]);
+
+  // Quick Create Event Handler
+  const handleQuickCreateEvent = async () => {
+    if (!quickEventName.trim()) return;
+    setIsCreatingQuickEvent(true);
+    try {
+      const slugVal = quickEventName
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+
+      const res = await fetch(`/api/organisations/${params.slug}/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: quickEventName.trim(),
+          slug: `${slugVal}-${Date.now().toString().slice(-4)}`,
+          eventDate: new Date().toISOString().split('T')[0],
+          status: 'PUBLISHED',
+          visibility: 'ORGANISATION',
+          allowUserUploads: true,
+          allowDownloads: true,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.data) {
+        setEvents((prev) => [data.data, ...prev]);
+        setSelectedEventId(data.data.id);
+        setShowQuickEventModal(false);
+      }
+    } catch (err) {
+      console.error('Failed to create quick event:', err);
+    } finally {
+      setIsCreatingQuickEvent(false);
+    }
+  };
 
   // Handle selected event albums
   const currentEvent = events.find((e) => e.id === selectedEventId);
@@ -186,8 +234,8 @@ export default function BulkUploadPage() {
         >
           <ArrowLeft className="w-4 h-4" /> Back to Media Team Hub
         </Link>
-        <span className="text-xs font-mono text-cyan-400 bg-cyan-950 px-2.5 py-1 rounded-full border border-cyan-800">
-          Direct-to-S3 Multi-part Enabled
+        <span className="text-xs font-mono text-cyan-400 bg-cyan-950 px-2.5 py-1 rounded-full border border-cyan-800 flex items-center gap-1.5">
+          <Sparkles className="w-3 h-3 text-amber-400" /> Cloudinary Media Storage Active
         </span>
       </div>
 
@@ -196,9 +244,34 @@ export default function BulkUploadPage() {
           Bulk Official Media Upload
         </h1>
         <p className="text-sm text-slate-400 mt-1">
-          Upload hundreds of high-resolution photos and 4K videos directly to object storage without server bottlenecks.
+          Upload high-resolution photos and 4K videos directly to Cloudinary storage without server bottlenecks.
         </p>
       </div>
+
+      {/* No Events Alert Banner */}
+      {!loadingEvents && events.length === 0 && (
+        <div className="p-5 rounded-2xl bg-gradient-to-r from-indigo-950/80 via-blue-950/60 to-slate-900 border border-indigo-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-indigo-400 flex-shrink-0">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">Event Required for Media Gallery</h3>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Media files are organized inside Events. Click below to create your first event in 1 second!
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleQuickCreateEvent}
+            disabled={isCreatingQuickEvent}
+            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-indigo-500 to-cyan-500 hover:from-indigo-400 hover:to-cyan-400 transition shadow-md flex items-center gap-1.5 flex-shrink-0 disabled:opacity-50"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>{isCreatingQuickEvent ? 'Creating Event...' : '✨ Quick Create "Main Gallery 2026"'}</span>
+          </button>
+        </div>
+      )}
 
       {/* Upload Form / Live Pipeline */}
       {!isUploading && !uploadFinished ? (
@@ -206,46 +279,73 @@ export default function BulkUploadPage() {
           {/* Target Event & Album Settings */}
           <div className="space-y-6">
             <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-xl space-y-4">
-              <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-cyan-400" /> Target Event & Album
-              </h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-cyan-400" /> Target Event & Album
+                </h2>
+                <Link
+                  href={`/organisations/${params.slug}/events/new`}
+                  className="text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 transition flex items-center gap-1"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" /> New Event
+                </Link>
+              </div>
 
               {/* Event Select */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-300">Select Event *</label>
-                <select
-                  value={selectedEventId}
-                  onChange={(e) => {
-                    setSelectedEventId(e.target.value);
-                    setSelectedAlbumId('');
-                  }}
-                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-cyan-500"
-                  disabled={loadingEvents}
-                >
-                  {events.map((ev) => (
-                    <option key={ev.id} value={ev.id}>
-                      {ev.name}
-                    </option>
-                  ))}
-                </select>
+                {events.length > 0 ? (
+                  <select
+                    value={selectedEventId}
+                    onChange={(e) => {
+                      setSelectedEventId(e.target.value);
+                      setSelectedAlbumId('');
+                    }}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-cyan-500"
+                    disabled={loadingEvents}
+                  >
+                    {events.map((ev) => (
+                      <option key={ev.id} value={ev.id}>
+                        {ev.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="px-3 py-2.5 rounded-xl bg-slate-950/60 border border-dashed border-slate-700 text-xs text-amber-300">
+                      No event spaces yet in this organisation.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleQuickCreateEvent}
+                      disabled={isCreatingQuickEvent}
+                      className="w-full py-2 rounded-xl text-xs font-semibold text-cyan-400 bg-cyan-950/40 hover:bg-cyan-900/40 border border-cyan-800 transition flex items-center justify-center gap-1.5"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>{isCreatingQuickEvent ? 'Creating...' : '+ Create "Main Gallery 2026"'}</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Album Select */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300">Target Album (Optional)</label>
-                <select
-                  value={selectedAlbumId}
-                  onChange={(e) => setSelectedAlbumId(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-cyan-500"
-                >
-                  <option value="">No specific album (Root event gallery)</option>
-                  {albums.map((alb) => (
-                    <option key={alb.id} value={alb.id}>
-                      {alb.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {events.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-300">Target Album (Optional)</label>
+                  <select
+                    value={selectedAlbumId}
+                    onChange={(e) => setSelectedAlbumId(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-cyan-500"
+                  >
+                    <option value="">No specific album (Root event gallery)</option>
+                    {albums.map((alb) => (
+                      <option key={alb.id} value={alb.id}>
+                        {alb.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Concurrency Settings */}
               <div className="space-y-1.5 pt-2 border-t border-slate-800">
@@ -374,11 +474,13 @@ export default function BulkUploadPage() {
               <button
                 onClick={handleStart}
                 disabled={!selectedEventId}
-                className="w-full py-4 rounded-2xl font-bold text-base text-white bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 shadow-xl shadow-cyan-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full py-4 rounded-2xl font-bold text-base text-white bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 shadow-xl shadow-cyan-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
               >
                 <UploadCloud className="w-5 h-5" />
                 <span>
-                  Start Direct Upload ({selectedFiles.length} files • {formatBytes(totalSelectedSize)})
+                  {selectedEventId
+                    ? `Start Direct Upload (${selectedFiles.length} files • ${formatBytes(totalSelectedSize)})`
+                    : 'Please Select or Create an Event First'}
                 </span>
               </button>
             )}
@@ -393,7 +495,7 @@ export default function BulkUploadPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-xl font-bold text-white">
-                    {uploadFinished ? 'Upload Batch Completed' : 'Uploading Media Directly to Storage'}
+                    {uploadFinished ? 'Upload Batch Completed' : 'Uploading Media Directly to Cloudinary'}
                   </span>
                   <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-cyan-950 text-cyan-400 border border-cyan-800">
                     {overallProgress}%

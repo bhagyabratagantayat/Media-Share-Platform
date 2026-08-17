@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { requireSessionUser } from '@/server/auth/session';
 import { BatchService } from '@/server/batches/service';
-import { handleApiError } from '@/lib/errors';
+import { successResponse, errorResponse } from '@/lib/api-response';
 
 export async function POST(
   request: NextRequest,
@@ -22,11 +22,8 @@ export async function POST(
 
     const result = await BatchService.prepareBatchChunk(params.batchId, user.userId, limit);
 
-    return NextResponse.json({
-      success: true,
-      data: result,
-    });
+    return successResponse(result);
   } catch (error) {
-    return handleApiError(error);
+    return errorResponse(error);
   }
 }

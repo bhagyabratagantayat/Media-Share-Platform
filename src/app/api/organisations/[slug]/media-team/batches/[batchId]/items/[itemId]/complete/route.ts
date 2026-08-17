@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { requireSessionUser } from '@/server/auth/session';
 import { BatchService } from '@/server/batches/service';
-import { handleApiError } from '@/lib/errors';
+import { successResponse, errorResponse } from '@/lib/api-response';
 
 export async function POST(
   request: NextRequest,
@@ -27,12 +27,8 @@ export async function POST(
       parts
     );
 
-    return NextResponse.json({
-      success: true,
-      data: item,
-      message: 'Batch item upload completed successfully.',
-    });
+    return successResponse(item, undefined, 200);
   } catch (error) {
-    return handleApiError(error);
+    return errorResponse(error);
   }
 }

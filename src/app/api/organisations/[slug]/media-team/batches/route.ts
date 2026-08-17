@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { prisma } from '@/server/db/prisma';
 import { requireSessionUser } from '@/server/auth/session';
 import { BatchService } from '@/server/batches/service';
-import { handleApiError, NotFoundError } from '@/lib/errors';
+import { NotFoundError } from '@/lib/errors';
+import { successResponse, errorResponse } from '@/lib/api-response';
 import { UploadBatchStatus } from '@prisma/client';
 
 export async function GET(
@@ -40,13 +41,9 @@ export async function GET(
       user.userId
     );
 
-    return NextResponse.json({
-      success: true,
-      data: result.items,
-      meta: result.meta,
-    });
+    return successResponse(result.items, result.meta as Record<string, unknown>, 200);
   } catch (error) {
-    return handleApiError(error);
+    return errorResponse(error);
   }
 }
 
@@ -78,15 +75,8 @@ export async function POST(
       files: body.files,
     });
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: batch,
-        message: 'Upload batch created successfully.',
-      },
-      { status: 201 }
-    );
+    return successResponse(batch, undefined, 201);
   } catch (error) {
-    return handleApiError(error);
+    return errorResponse(error);
   }
 }
